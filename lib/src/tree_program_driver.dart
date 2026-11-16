@@ -48,7 +48,7 @@ final class TreeProgramDriver implements ProgramDriver {
     workingSubdir: args.inFolder.value,
     quiet: quiet,
     taps: executor.ExecTaps(
-      onPrinted: (pipe, line) => report(
+      onOutput: (pipe, line) => report(
         Printed(switch (pipe) {
           executor.Pipe.stdout => Channel.stdout,
           executor.Pipe.stderr => Channel.stderr,

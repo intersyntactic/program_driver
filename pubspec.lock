@@ -157,8 +157,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "9deeec7"
-      resolved-ref: "9deeec76fbfc4543e1247b8c0af351339b069a27"
+      ref: "184af7a"
+      resolved-ref: "184af7ab624de9dc2bff3b659db94542a79ecbb4"
       url: "https://github.com/intersyntactic/executor.git"
     source: git
     version: "0.1.0"
