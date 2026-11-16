@@ -1,9 +1,9 @@
 /// Runs the program driver as a service (see
-/// `package:is_program_driver/service.dart`), as the journey user:
+/// `package:is_program_driver/service.dart`), as the path's user:
 ///
-///     PROGRAM_DRIVER_SOCKET=/run/program-contained/journey-3/driver.sock \
-///       PROGRAM_DRIVER_CALLER=intersyntactic-airlock \
-///       PROGRAM_DRIVER_ROOT=/home/journey-3 \
+///     PROGRAM_DRIVER_SOCKET=/run/program/<user>/driver.sock \
+///       PROGRAM_DRIVER_CALLER=airlock \
+///       PROGRAM_DRIVER_ROOT=/home/<user> \
 ///       dart run is_program_driver:service
 ///
 /// `PROGRAM_DRIVER_CALLER` is the one user, by name or id, whose starts it

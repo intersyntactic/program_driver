@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:is_effects/is_effects.dart';
 import 'package:is_executor/executor.dart' as executor;
 
-/// A [ProgramDriver] for one root, the journey user's home: each program it
+/// A [ProgramDriver] for one root, the path user's home: each program it
 /// starts runs in the folder its [Args.inFolder] names under the root, which
 /// must resolve inside it, leads a process group of its own, and is killed
 /// with everything it started when it runs past [timeout].

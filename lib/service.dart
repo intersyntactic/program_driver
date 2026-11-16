@@ -1,5 +1,5 @@
 /// The program driver as a service of its own, which only the airlock's user
-/// may call. It runs as the journey's OS user, so a program it starts can do
+/// may call. It runs as the path's OS user, so a program it starts can do
 /// what that user can and no more.
 ///
 /// A caller connects to the Unix socket, sends one start (see [encodeStart])
@@ -38,7 +38,7 @@ final class ProgramDriverService {
 
   /// Listens on [socket], starting programs through [driver] for the user
   /// [caller] alone. The socket is made readable and writable by its group,
-  /// the journey user's own, which is how the airlock's user reaches it; a
+  /// the path user's own, which is how the airlock's user reaches it; a
   /// socket file nothing listens on is replaced.
   static Future<ProgramDriverService> start(
     ProgramDriver driver,
