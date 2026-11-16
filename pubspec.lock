@@ -157,10 +157,18 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "7af2468"
-      resolved-ref: "7af2468fea244380ecca8c95087e0b825d12559d"
+      ref: "9deeec7"
+      resolved-ref: "9deeec76fbfc4543e1247b8c0af351339b069a27"
       url: "https://github.com/intersyntactic/executor.git"
     source: git
+    version: "0.1.0"
+  is_path_confinement:
+    dependency: transitive
+    description:
+      name: is_path_confinement
+      sha256: b09d4b18aa39366b63497117be8adbd9f0cfb987a3eb2db437d053f3bc11ea45
+      url: "https://pub.dev"
+    source: hosted
     version: "0.1.0"
   lints:
     dependency: "direct dev"
