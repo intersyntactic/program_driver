@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:is_effects/is_effects.dart';
-import 'package:is_executor/executor.dart' as executor;
+import 'package:is_executor/is_executor.dart' as executor;
 
 /// A [ProgramDriver] for one root, the suit's home: each program it
 /// starts runs in the folder its [Args.inFolder] names under the root, which
