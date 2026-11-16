@@ -37,27 +37,30 @@ final class TreeProgramDriver implements ProgramDriver {
   static Future<bool> _decidedByTheAirlock(executor.ExecRequest _) async =>
       true;
 
+  /// Reports what the program prints as it prints it, and returns only once
+  /// all of it has been reported, so nothing is reported after the outcome.
   @override
   Future<Outcome<ExecResult>> start(
     ProgramName program,
     Args args, {
     required Report report,
-  }) async => switch (await _executor.start(
-    [program.value, ...args.args],
-    input: args.stdin,
-    workingSubdir: args.inFolder.value,
-    quiet: quiet,
-    taps: executor.ExecTaps(
-      output: executor.Chunks(
-        (pipe, text) => report(
-          Printed(switch (pipe) {
-            executor.Pipe.stdout => Channel.stdout,
-            executor.Pipe.stderr => Channel.stderr,
-          }, text),
-        ),
-      ),
-    ),
-  )) {
+  }) async {
+    final running = _executor.start(
+      [program.value, ...args.args],
+      input: args.stdin,
+      workingSubdir: args.inFolder.value,
+      quiet: quiet,
+      taps: executor.ExecTaps.none,
+    );
+    final (start, _, _) = await (
+      running.result,
+      running.stdout.forEach((t) => report(Printed(Channel.stdout, t))),
+      running.stderr.forEach((t) => report(Printed(Channel.stderr, t))),
+    ).wait;
+    return _outcome(start);
+  }
+
+  Outcome<ExecResult> _outcome(executor.ExecStart start) => switch (start) {
     executor.ExecStarted(:final result) => Ran(switch (result) {
       executor.ExecResult(:final silentFor?) => Killed(
         'printed nothing for ${silentFor.inSeconds}s',
