@@ -153,6 +153,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.2"
+  is_executor:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: "7af2468"
+      resolved-ref: "7af2468fea244380ecca8c95087e0b825d12559d"
+      url: "https://github.com/intersyntactic/executor.git"
+    source: git
+    version: "0.1.0"
   lints:
     dependency: "direct dev"
     description:
