@@ -48,11 +48,11 @@ final class TreeProgramDriver implements ProgramDriver {
     workingSubdir: args.inFolder.value,
     quiet: quiet,
     taps: executor.ExecTaps(
-      onOutput: (pipe, line) => report(
+      onOutput: (pipe, text) => report(
         Printed(switch (pipe) {
           executor.Pipe.stdout => Channel.stdout,
           executor.Pipe.stderr => Channel.stderr,
-        }, '$line\n'),
+        }, text),
       ),
     ),
   )) {
