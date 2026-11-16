@@ -156,11 +156,10 @@ packages:
   is_executor:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "5b9dce32568b2a9856d751f780c6ea2e6a73b083"
-      resolved-ref: "5b9dce32568b2a9856d751f780c6ea2e6a73b083"
-      url: "https://github.com/intersyntactic/executor.git"
-    source: git
+      name: is_executor
+      sha256: c7d0325d96462c98408f8674dd39b4542b0c66ce33dff54edfcc735024f2f78b
+      url: "https://pub.dev"
+    source: hosted
     version: "0.1.0"
   is_path_confinement:
     dependency: transitive

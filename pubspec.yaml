@@ -11,11 +11,7 @@ environment:
 
 dependencies:
   is_effects: ^0.2.2
-  # Until it is published: https://github.com/intersyntactic/executor
-  is_executor:
-    git:
-      url: https://github.com/intersyntactic/executor.git
-      ref: 5b9dce32568b2a9856d751f780c6ea2e6a73b083
+  is_executor: ^0.1.0
 
 dev_dependencies:
   lints: ^6.1.0
