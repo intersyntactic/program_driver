@@ -38,7 +38,7 @@ final class ProgramDriverService {
 
   /// Listens on [socket], starting programs through [driver] for the user
   /// [caller] alone. The socket is made readable and writable by its group,
-  /// the path user's own, which is how the airlock's user reaches it; a
+  /// the suit's own, which is how the airlock's user reaches it; a
   /// socket file nothing listens on is replaced.
   static Future<ProgramDriverService> start(
     ProgramDriver driver,
