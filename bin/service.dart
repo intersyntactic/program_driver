@@ -2,7 +2,7 @@
 /// `package:is_program_driver/service.dart`), as the journey user:
 ///
 ///     PROGRAM_DRIVER_SOCKET=/run/program-contained/journey-3/driver.sock \
-///       PROGRAM_DRIVER_CALLER=intersyntactic-airlock \
+///       PROGRAM_DRIVER_CALLER=airlock \
 ///       PROGRAM_DRIVER_ROOT=/home/journey-3 \
 ///       dart run is_program_driver:service
 ///
