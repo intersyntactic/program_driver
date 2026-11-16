@@ -1,0 +1,22 @@
+name: is_program_driver
+description: >-
+  intersyntactic's program driver: starts the programs the airlock has
+  decided, as the journey's own OS user, in the journey's working tree.
+version: 0.1.0
+repository: https://github.com/intersyntactic/program_driver
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  is_effects: ^0.2.2
+  # Until it is published: https://github.com/intersyntactic/executor
+  is_executor:
+    git:
+      url: https://github.com/intersyntactic/executor.git
+      ref: b307cfe
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.25.0
