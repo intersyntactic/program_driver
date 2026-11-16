@@ -96,14 +96,23 @@ void main() {
   test('answers nobody but its caller, and starts nothing', () async {
     final service = await ProgramDriverService.start(driver, me + 1, socket);
     addTearDown(service.close);
-    final out = await SocketProgramDriver(socket).start(
-      git,
-      Args(['status']),
-      report: (_) => fail('reported to a refused caller'),
+    // From the caller's side a hang-up after the start is sent is a run
+    // whose outcome never came back, which it cannot tell from a refusal.
+    await expectLater(
+      SocketProgramDriver(socket).start(
+        git,
+        Args(['status']),
+        report: (_) => fail('reported to a refused caller'),
+      ),
+      throwsA(isA<OutcomeUnknown>()),
     );
-    // Why depends on whether the hang-up lands before or after the write.
-    expect(out, isA<Refused>());
     expect(driver.started, isEmpty);
+  });
+
+  test('is refused when no service is listening', () async {
+    final out = await SocketProgramDriver(socket)
+        .start(git, Args(['status']), report: (_) {});
+    expect(out, isA<Refused>());
   });
 
   test('its socket is readable and writable by owner and group only', () async {

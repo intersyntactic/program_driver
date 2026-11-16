@@ -132,34 +132,27 @@ final class SocketProgramDriver implements ProgramDriver {
 
   final File socket;
 
-  /// A run whose connection ends before its [Finished] is [Refused] when
-  /// nothing was reported, so the program never started; once something
-  /// was, it is [Killed] with what it had printed, though the program may
-  /// still be running. The contract has no outcome for a run lost track of.
+  /// [Refused] only when the service could not be reached, so nothing was
+  /// sent. Once the start is sent, a run that ends without its [Finished]
+  /// throws [OutcomeUnknown]: the program may have started, even having
+  /// printed nothing, and may still be running, and no outcome in the
+  /// contract says that.
   @override
   Future<Outcome<ExecResult>> start(
     ProgramName program,
     Args args, {
     required Report report,
   }) async {
-    final stdout = StringBuffer();
-    final stderr = StringBuffer();
-    var started = false;
-    Outcome<ExecResult> lost(String why) => started
-        ? Ran(
-            Killed(
-              'lost the program driver mid-run ($why); '
-              'the program may still be running',
-              stdout: '$stdout',
-              stderr: '$stderr',
-            ),
-          )
-        : Refused('program driver: $why');
+    final Socket s;
     try {
-      final s = await Socket.connect(
+      s = await Socket.connect(
         InternetAddress(socket.path, type: InternetAddressType.unix),
         0,
       );
+    } on SocketException catch (e) {
+      return Refused('program driver: ${e.message}');
+    }
+    try {
       s.add(utf8.encode(jsonEncode(encodeStart(program, args))));
       await s.close();
       await for (final line
@@ -169,22 +162,31 @@ final class SocketProgramDriver implements ProgramDriver {
               .transform(const LineSplitter())) {
         switch (decodeProgramMessage(jsonDecode(line))) {
           case Reported(:final progress):
-            started = true;
-            if (progress case Printed(:final channel, :final text)) {
-              (channel == Channel.stdout ? stdout : stderr).write(text);
-            }
             report(progress);
           case Finished(:final outcome):
             return outcome;
         }
       }
-      return lost(started ? 'connection closed' : 'refused caller');
+      throw const OutcomeUnknown('the connection closed before it finished');
     } on SocketException catch (e) {
-      return lost(e.message);
+      throw OutcomeUnknown(e.message);
     } on FormatException catch (e) {
-      return lost('bad answer: ${e.message}');
+      throw OutcomeUnknown('bad answer: ${e.message}');
     }
   }
+}
+
+/// A start was sent to the program driver and its outcome never came back,
+/// because [why]: the program may not have started, may have finished, or
+/// may still be running. Thrown, not recorded as an outcome, since every
+/// outcome the contract has would claim to know which.
+final class OutcomeUnknown implements Exception {
+  const OutcomeUnknown(this.why);
+
+  final String why;
+
+  @override
+  String toString() => 'program driver: outcome unknown: $why';
 }
 
 /// The user on the other end of [socket], as the kernel reports it: Linux's
