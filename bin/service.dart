@@ -1,9 +1,9 @@
 /// Runs the program driver as a service (see
-/// `package:is_program_driver/service.dart`), as the path's user:
+/// `package:is_program_driver/service.dart`), as the suit the path wears:
 ///
-///     PROGRAM_DRIVER_SOCKET=/run/program/<user>/driver.sock \
+///     PROGRAM_DRIVER_SOCKET=/run/program/suit-3/driver.sock \
 ///       PROGRAM_DRIVER_CALLER=airlock \
-///       PROGRAM_DRIVER_ROOT=/home/<user> \
+///       PROGRAM_DRIVER_ROOT=/home/suit-3 \
 ///       dart run is_program_driver:service
 ///
 /// `PROGRAM_DRIVER_CALLER` is the one user, by name or id, whose starts it
