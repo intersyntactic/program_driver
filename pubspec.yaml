@@ -15,7 +15,7 @@ dependencies:
   is_executor:
     git:
       url: https://github.com/intersyntactic/executor.git
-      ref: 5c56447d8477b0c1cf4f7bb07547ee913a56c572
+      ref: 54202b73e43fc102c46af5caa424c1d713100d36
 
 dev_dependencies:
   lints: ^6.1.0
