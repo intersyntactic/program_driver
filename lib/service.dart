@@ -2,9 +2,10 @@
 /// may call. It runs as the suit a trajectory's agent wears, so a program it
 /// starts can do what that suit can and no more.
 ///
-/// A caller connects to the Unix socket, sends one start (see [encodeStart])
-/// and closes its side; the service answers one line per [ProgramMessage]
-/// (see [encodeProgramMessage]): a [Reported] for each piece the program
+/// A caller connects to the Unix socket, sends one program to run (see
+/// [encodeProgramToRun]) and closes its side; the service answers one line
+/// per [ProgramMessage] (see [encodeProgramMessage], with [encodeExecResult]
+/// for the outcome): a [Reported] for each piece the program
 /// prints, as it prints it, then one [Finished], and closes.
 /// [SocketProgramDriver] is that caller.
 ///
@@ -27,12 +28,12 @@ final class ProgramDriverService {
     this._server,
   );
 
-  final ProgramDriver _driver;
+  final RunsPrograms _driver;
   final int _caller;
   final File _socket;
   final ServerSocket _server;
 
-  /// A start is a program's name, its arguments and its stdin, so far
+  /// A program to run is its name, its arguments and its stdin, so far
   /// smaller than this.
   static const maxRequest = 1 << 20;
 
@@ -41,7 +42,7 @@ final class ProgramDriverService {
   /// the suit's own, which is how the airlock's user reaches it; a
   /// socket file nothing listens on is replaced.
   static Future<ProgramDriverService> start(
-    ProgramDriver driver,
+    RunsPrograms driver,
     int caller,
     File socket,
   ) async {
@@ -93,8 +94,10 @@ final class ProgramDriverService {
         }
         request.add(chunk);
       }
-      void send(ProgramMessage message) => socket.add(
-        utf8.encode('${jsonEncode(encodeProgramMessage(message))}\n'),
+      void send(ProgramMessage<ExecResult> message) => socket.add(
+        utf8.encode(
+          '${jsonEncode(encodeProgramMessage(message, encodeExecResult))}\n',
+        ),
       );
       send(Finished(await _run(tooLarge ? null : request.takeBytes(), send)));
       await socket.close();
@@ -103,21 +106,23 @@ final class ProgramDriverService {
     }
   }
 
-  /// Runs the start in [request] (null: it was too large), reporting
-  /// through [send].
+  /// Runs the program to run in [request] (null: it was too large),
+  /// reporting through [send].
   Future<Outcome<ExecResult>> _run(
     Uint8List? request,
-    void Function(ProgramMessage) send,
+    void Function(ProgramMessage<ExecResult>) send,
   ) async {
     if (request == null) return const Refused('request too large');
     final ProgramName program;
     final Args args;
     try {
-      (program, args) = decodeStart(jsonDecode(utf8.decode(request)));
+      (program, args) = decodeProgramToRun(jsonDecode(utf8.decode(request)));
     } on FormatException catch (e) {
+      // Infra's deploy proof matches this text on the box, so it changes
+      // only together with that proof.
       return Refused('not a start: ${e.message}');
     }
-    return _driver.start(
+    return _driver.runProgram(
       program,
       args,
       report: (progress) => send(Reported(progress)),
@@ -125,20 +130,20 @@ final class ProgramDriverService {
   }
 }
 
-/// A [ProgramDriver] in another process: sends each start to the service at
-/// [socket] and reports what comes back as it comes.
-final class SocketProgramDriver implements ProgramDriver {
+/// [RunsPrograms] in another process: sends each program to run to the
+/// service at [socket] and reports what comes back as it comes.
+final class SocketProgramDriver implements RunsPrograms {
   SocketProgramDriver(this.socket);
 
   final File socket;
 
   /// [Refused] only when the service could not be reached, so nothing was
-  /// sent. Once the start is sent, a run that ends without its [Finished]
-  /// throws [OutcomeUnknown]: the program may have started, even having
-  /// printed nothing, and may still be running, and no outcome in the
+  /// sent. Once the program to run is sent, a run that ends without its
+  /// [Finished] throws [OutcomeUnknown]: the program may have started, even
+  /// having printed nothing, and may still be running, and no outcome in the
   /// contract says that.
   @override
-  Future<Outcome<ExecResult>> start(
+  Future<Outcome<ExecResult>> runProgram(
     ProgramName program,
     Args args, {
     required Report report,
@@ -153,14 +158,14 @@ final class SocketProgramDriver implements ProgramDriver {
       return Refused('program driver: ${e.message}');
     }
     try {
-      s.add(utf8.encode(jsonEncode(encodeStart(program, args))));
+      s.add(utf8.encode(jsonEncode(encodeProgramToRun(program, args))));
       await s.close();
       await for (final line
           in s
               .cast<List<int>>()
               .transform(utf8.decoder)
               .transform(const LineSplitter())) {
-        switch (decodeProgramMessage(jsonDecode(line))) {
+        switch (decodeProgramMessage(jsonDecode(line), decodeExecResult)) {
           case Reported(:final progress):
             report(progress);
           case Finished(:final outcome):

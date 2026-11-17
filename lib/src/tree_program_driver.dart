@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:is_effects/is_effects.dart';
 import 'package:is_executor/is_executor.dart' as executor;
 
-/// A [ProgramDriver] for one root, the suit's home: each program it
+/// [RunsPrograms] for one root, the suit's home: each program it
 /// starts runs in the folder its [Args.inFolder] names under the root, which
 /// must resolve inside it, leads a process group of its own, and is killed
 /// with everything it started when it runs past [timeout].
@@ -11,7 +11,7 @@ import 'package:is_executor/is_executor.dart' as executor;
 /// A start reaches it only once the airlock has decided and recorded it, so
 /// it asks nobody. Programs run as this process's OS user, with everything
 /// that user can do.
-final class TreeProgramDriver implements ProgramDriver {
+final class TreeProgramDriver implements RunsPrograms {
   /// [timeout] is how long a program may run before its group is killed, and
   /// [quiet], when given, how long it may print nothing once it has started
   /// printing.
@@ -40,7 +40,7 @@ final class TreeProgramDriver implements ProgramDriver {
   /// Reports what the program prints as it prints it, and returns only once
   /// all of it has been reported, so nothing is reported after the outcome.
   @override
-  Future<Outcome<ExecResult>> start(
+  Future<Outcome<ExecResult>> runProgram(
     ProgramName program,
     Args args, {
     required Report report,

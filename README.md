@@ -1,6 +1,6 @@
 # is_program_driver
 
-intersyntactic's `ProgramDriver` (from [is_effects](https://github.com/intersyntactic/effects)):
+intersyntactic's `RunsPrograms` (from [is_effects](https://github.com/intersyntactic/effects)):
 it starts the programs the airlock has decided, such as `git` or `dart`, and
 reports what each prints while it runs, then how it ended.
 
@@ -19,9 +19,10 @@ kernel reports it, never from the request.
 One connection per run, one JSON value per line, with the codecs from
 is_effects:
 
-- the caller sends `encodeStart(program, args)` and closes its side;
+- the caller sends `encodeProgramToRun(program, args)` and closes its side;
 - the service answers a `Reported` for each piece the program prints, as it
-  prints it, then one `Finished` with the outcome, and closes.
+  prints it, then one `Finished` with the outcome (`encodeProgramMessage`
+  with `encodeExecResult`), and closes.
 
 `SocketProgramDriver` is that caller, for the airlock.
 
@@ -33,6 +34,6 @@ and `program-open@.service` (infra's), which set:
 - `PROGRAM_DRIVER_SOCKET`: where it listens, inside its `RuntimeDirectory`;
   it makes the socket `0660`, so the suit's group, which the airlock's
   user is in, can reach it;
-- `PROGRAM_DRIVER_CALLER`: the one user, by name or id, whose starts it
-  carries out;
+- `PROGRAM_DRIVER_CALLER`: the one user, by name or id, whose programs it
+  runs;
 - `PROGRAM_DRIVER_ROOT`: `/home/%i`; every run's folder must resolve inside it.
