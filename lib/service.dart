@@ -1,6 +1,6 @@
 /// The program driver as a service of its own, which only the airlock's user
-/// may call. It runs as the path's OS user, so a program it starts can do
-/// what that user can and no more.
+/// may call. It runs as the suit a trajectory's agent wears, so a program it
+/// starts can do what that suit can and no more.
 ///
 /// A caller connects to the Unix socket, sends one start (see [encodeStart])
 /// and closes its side; the service answers one line per [ProgramMessage]
