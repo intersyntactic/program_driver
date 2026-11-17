@@ -7,11 +7,11 @@ import 'package:test/test.dart';
 
 /// Prints its arguments on stdout and its stdin on stderr, then exits with
 /// the number of arguments.
-final class Echo implements ProgramDriver {
+final class Echo implements RunsPrograms {
   final started = <(ProgramName, Args)>[];
 
   @override
-  Future<Outcome<ExecResult>> start(
+  Future<Outcome<ExecResult>> runProgram(
     ProgramName program,
     Args args, {
     required Report report,
@@ -56,7 +56,7 @@ void main() {
     final service = await ProgramDriverService.start(driver, me, socket);
     addTearDown(service.close);
     final reported = <Progress>[];
-    final out = await SocketProgramDriver(socket).start(
+    final out = await SocketProgramDriver(socket).runProgram(
       git,
       Args(['status', '-s'], stdin: 'in', inFolder: RelativePath('trees/a')),
       report: reported.add,
@@ -77,7 +77,7 @@ void main() {
   test('answers a line per message, the last one finished', () async {
     final service = await ProgramDriverService.start(driver, me, socket);
     addTearDown(service.close);
-    final lines = await raw(jsonEncode(encodeStart(git, Args(['x']))));
+    final lines = await raw(jsonEncode(encodeProgramToRun(git, Args(['x']))));
     expect(
       [for (final l in lines) (jsonDecode(l) as Map)['kind']],
       ['reported', 'reported', 'finished'],
@@ -88,7 +88,10 @@ void main() {
     final service = await ProgramDriverService.start(driver, me, socket);
     addTearDown(service.close);
     final lines = await raw('{"program":"git status"}');
-    final finished = decodeProgramMessage(jsonDecode(lines.single)) as Finished;
+    final finished = decodeProgramMessage(
+      jsonDecode(lines.single),
+      decodeExecResult,
+    ) as Finished<ExecResult>;
     expect((finished.outcome as Refused).why, startsWith('not a start'));
     expect(driver.started, isEmpty);
   });
@@ -99,7 +102,7 @@ void main() {
     // From the caller's side a hang-up after the start is sent is a run
     // whose outcome never came back, which it cannot tell from a refusal.
     await expectLater(
-      SocketProgramDriver(socket).start(
+      SocketProgramDriver(socket).runProgram(
         git,
         Args(['status']),
         report: (_) => fail('reported to a refused caller'),
@@ -111,7 +114,7 @@ void main() {
 
   test('is refused when no service is listening', () async {
     final out = await SocketProgramDriver(socket)
-        .start(git, Args(['status']), report: (_) {});
+        .runProgram(git, Args(['status']), report: (_) {});
     expect(out, isA<Refused>());
   });
 
