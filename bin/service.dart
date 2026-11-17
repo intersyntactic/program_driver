@@ -1,5 +1,6 @@
 /// Runs the program driver as a service (see
-/// `package:is_program_driver/service.dart`), as the suit the path wears:
+/// `package:is_program_driver/service.dart`), as the suit a trajectory's
+/// agent wears:
 ///
 ///     PROGRAM_DRIVER_SOCKET=/run/program/suit-3/driver.sock \
 ///       PROGRAM_DRIVER_CALLER=airlock \
