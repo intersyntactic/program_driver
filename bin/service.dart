@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:is_program_driver/is_program_driver.dart';
+import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 
 Future<void> main() async {
   final env = Platform.environment;
@@ -29,7 +30,10 @@ Future<void> main() async {
     ])
       env[name] ?? _fail('$name is not set'),
   ];
-  final uid = _uidOf(caller) ?? _fail('no user $caller');
+  final number = _uidOf(caller) ?? _fail('no user $caller');
+  final uid =
+      UserId.parse(number) ??
+      _fail('PROGRAM_DRIVER_CALLER: uid $number can never be the caller');
   if (!Directory(root).existsSync()) _fail('no folder $root');
   final timeout = switch (env['PROGRAM_DRIVER_TIMEOUT']) {
     null => const Duration(minutes: 10),
