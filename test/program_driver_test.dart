@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:is_effects/is_effects.dart';
 import 'package:is_program_driver/is_program_driver.dart';
+import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 import 'package:test/test.dart';
 
-final me = int.parse((Process.runSync('id', ['-u']).stdout as String).trim());
+final me = UserId.parse(
+  int.parse((Process.runSync('id', ['-u']).stdout as String).trim()),
+)!;
 final sh = ProgramName.parse('sh')!;
 
 void main() {
@@ -24,14 +28,16 @@ void main() {
   tearDown(() => dir.delete(recursive: true));
 
   Future<ProgramDriver> start({
-    int? caller,
+    UserId? caller,
     Duration timeout = const Duration(seconds: 30),
+    SocketUserReader? socketUserReader,
   }) async {
     final driver = await ProgramDriver.start(
       root: root,
       caller: caller ?? me,
       socket: socket,
       timeout: timeout,
+      socketUserReader: socketUserReader,
     );
     addTearDown(driver.close);
     return driver;
@@ -109,7 +115,7 @@ void main() {
   });
 
   test('answers nobody but its caller, and starts nothing', () async {
-    await start(caller: me + 1);
+    await start(caller: UserId.parse(me.number + 1));
     // From the caller's side a hang-up after the start is sent is a run
     // whose outcome never came back, which it cannot tell from a refusal.
     await expectLater(
@@ -117,6 +123,25 @@ void main() {
         sh,
         Args(['-c', 'touch ran']),
         report: (_) => fail('reported to a refused caller'),
+      ),
+      throwsA(isA<OutcomeUnknown>()),
+    );
+    expect(File('${root.path}/ran').existsSync(), isFalse);
+  });
+
+  test('turns away a peer whose user cannot be read', () async {
+    // The kernel answers with fewer bytes than a ucred holds.
+    await start(
+      socketUserReader: SocketUserReader(
+        kernel: Kernel.linux,
+        readOption: (_, _) => Uint8List(0),
+      ),
+    );
+    await expectLater(
+      ProgramDriverSocket(socket).runProgram(
+        sh,
+        Args(['-c', 'touch ran']),
+        report: (_) => fail('reported to an unknown peer'),
       ),
       throwsA(isA<OutcomeUnknown>()),
     );

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:is_effects/is_effects.dart';
 import 'package:is_executor/is_executor.dart' as executor;
+import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 
 /// The program driver: a service on a Unix socket that starts programs under
 /// its root, the suit's home, for the airlock's user alone.
@@ -29,7 +30,7 @@ final class ProgramDriver {
     this.root,
     this.timeout,
     this.quiet,
-    this._caller,
+    this._socketUserCheck,
     this._socket,
     this._server,
   );
@@ -43,7 +44,7 @@ final class ProgramDriver {
   /// printing.
   final Duration? quiet;
 
-  final int _caller;
+  final SocketUserCheck _socketUserCheck;
   final File _socket;
   final ServerSocket _server;
 
@@ -65,13 +66,15 @@ final class ProgramDriver {
   /// Listens on [socket] for the user [caller] alone, starting programs under
   /// [root]. The socket is made readable and writable by its group, the
   /// suit's own, which is how the airlock's user reaches it; a socket file
-  /// nothing listens on is replaced.
+  /// nothing listens on is replaced. A connection whose user [socketUserReader]
+  /// cannot read is turned away.
   static Future<ProgramDriver> start({
     required Directory root,
-    required int caller,
+    required UserId caller,
     required File socket,
     required Duration timeout,
     Duration? quiet,
+    SocketUserReader? socketUserReader,
   }) async {
     final server = await _bind(socket);
     final chmod = await Process.run('chmod', ['0660', socket.path]);
@@ -83,7 +86,7 @@ final class ProgramDriver {
       root,
       timeout,
       quiet,
-      caller,
+      SocketUserCheck.only(caller, reader: socketUserReader),
       socket,
       server,
     );
@@ -118,9 +121,8 @@ final class ProgramDriver {
   }
 
   Future<void> _serve(Socket socket) async {
-    final uid = _peerUid(socket);
     try {
-      if (uid != _caller) {
+      if (!_socketUserCheck.allows(socket)) {
         socket.destroy();
         return;
       }
@@ -213,22 +215,4 @@ final class ProgramDriver {
     }),
     executor.ExecNotStarted(:final why) => Refused(why),
   };
-}
-
-/// The user on the other end of [socket], as the kernel reports it: Linux's
-/// `SO_PEERCRED`, macOS's `LOCAL_PEERCRED`. Null where neither is known.
-int? _peerUid(Socket socket) {
-  try {
-    if (Platform.isLinux) {
-      final ucred = socket.getRawOption(RawSocketOption(1, 17, Uint8List(12)));
-      return ByteData.sublistView(ucred).getUint32(4, Endian.host);
-    }
-    if (Platform.isMacOS) {
-      final xucred = socket.getRawOption(RawSocketOption(0, 1, Uint8List(76)));
-      return ByteData.sublistView(xucred).getUint32(4, Endian.host);
-    }
-  } on SocketException {
-    return null;
-  }
-  return null;
 }
