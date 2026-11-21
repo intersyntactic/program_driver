@@ -1,5 +1,4 @@
-/// Runs the program driver as a service (see
-/// `package:is_program_driver/service.dart`), as the suit a trajectory's
+/// Runs the program driver (see `ProgramDriver`), as the suit a trajectory's
 /// agent wears:
 ///
 ///     PROGRAM_DRIVER_SOCKET=/run/program/suit-3/driver.sock \
@@ -19,7 +18,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:is_program_driver/is_program_driver.dart';
-import 'package:is_program_driver/service.dart';
 
 Future<void> main() async {
   final env = Platform.environment;
@@ -40,12 +38,13 @@ Future<void> main() async {
       _ => _fail('PROGRAM_DRIVER_TIMEOUT: not a number of seconds ($raw)'),
     },
   };
-  final ProgramDriverService service;
+  final ProgramDriver driver;
   try {
-    service = await ProgramDriverService.start(
-      TreeProgramDriver(Directory(root), timeout: timeout),
-      uid,
-      File(socket),
+    driver = await ProgramDriver.start(
+      root: Directory(root),
+      caller: uid,
+      socket: File(socket),
+      timeout: timeout,
     );
   } on Object catch (e) {
     _fail('$e');
@@ -61,8 +60,7 @@ Future<void> main() async {
     });
   }
   await stop.future;
-  await service.close();
-  await TreeProgramDriver.killRunning();
+  await driver.close();
   exit(0);
 }
 
