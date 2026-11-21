@@ -7,3 +7,4 @@
   `ProgramMessage`s. Closing it kills every program still running.
 - `ProgramDriverSocket`: the airlock's side of that socket, its
   `RunsPrograms`.
+- Requires is_effects `^0.12.0`, the version the airlock depends on.
