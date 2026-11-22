@@ -9,6 +9,9 @@
 - BREAKING: requests are tagged. `{"kind": "run", "programToRun": …}` runs
   a program; `{"kind": "list"}` answers the installed programs' names.
 - `ProgramDriverSocket.installedPrograms()`: the programs the driver runs.
+- A program that prints more than `maxOutputBytes` on stdout or stderr
+  (`PROGRAM_DRIVER_MAX_OUTPUT_BYTES`, 8 MiB unless set) is killed with its
+  group and ends `Killed`, keeping that much, cut where a character ends.
 
 ## 0.1.0
 

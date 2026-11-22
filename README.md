@@ -44,6 +44,13 @@ owns, or anyone besides the owner may write, the folder, an entry's
 program, or any folder above either. A suit's home is the suit's, so no
 entry may lead there.
 
+A program may print at most `PROGRAM_DRIVER_MAX_OUTPUT_BYTES` on stdout, and
+as much on stderr. The first time it prints past that, its group is killed
+and it ends `Killed("printed more than N bytes on stdout")`, keeping what it
+printed up to N bytes, cut where a character ends; nothing past that is
+reported or recorded. It is `Killed`, not `Refused`, because the program
+ran and may already have done something.
+
 The list says what the airlock may ask for; it confines nothing. The suit
 is the wall: a listed `sh`, `dart` or `git` can do anything the suit can.
 
@@ -60,4 +67,6 @@ and `program-open@.service` (infra's), which set:
 - `PROGRAM_DRIVER_ROOT`: `/home/%i`; every run's folder must resolve inside it;
 - `PROGRAM_DRIVER_PROGRAMS`: the box's programs folder, which the box's
   install fills. It is required: without it, or with a folder it will not
-  start with, it exits 78.
+  start with, it exits 78;
+- `PROGRAM_DRIVER_MAX_OUTPUT_BYTES`, optional: the most a program may print
+  on each of stdout and stderr, 8 MiB unless set.

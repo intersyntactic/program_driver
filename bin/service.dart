@@ -9,8 +9,11 @@
 ///
 /// `PROGRAM_DRIVER_CALLER` is the one user, by name or id, whose starts it
 /// carries out. `PROGRAM_DRIVER_PROGRAMS` is the box's programs folder (see
-/// `InstalledPrograms`): it runs those programs and no others. `PROGRAM_DRIVER_TIMEOUT`, in seconds, is how long a program
-/// may run before its group is killed: 600 unless set.
+/// `InstalledPrograms`): it runs those programs and no others.
+/// `PROGRAM_DRIVER_TIMEOUT`, in seconds, is how long a program may run before
+/// its group is killed: 600 unless set. `PROGRAM_DRIVER_MAX_OUTPUT_BYTES` is
+/// the most a program may print on stdout, and on stderr, before its group is
+/// killed: 8 MiB unless set.
 ///
 /// Exits 78 when it cannot start as configured. On SIGTERM or SIGINT it
 /// kills every program still running, group and all, and closes.
@@ -45,6 +48,15 @@ Future<void> main() async {
       _ => _fail('PROGRAM_DRIVER_TIMEOUT: not a number of seconds ($raw)'),
     },
   };
+  final maxOutputBytes = switch (env['PROGRAM_DRIVER_MAX_OUTPUT_BYTES']) {
+    null => ProgramDriver.defaultMaxOutputBytes,
+    final raw => switch (int.tryParse(raw)) {
+      final bytes? when bytes > 0 => bytes,
+      _ => _fail(
+        'PROGRAM_DRIVER_MAX_OUTPUT_BYTES: not a number of bytes ($raw)',
+      ),
+    },
+  };
   final self = _uidOf(null) ?? _fail('cannot read its own user');
   final InstalledPrograms programs;
   try {
@@ -63,13 +75,14 @@ Future<void> main() async {
       caller: uid,
       socket: File(socket),
       timeout: timeout,
+      maxOutputBytes: maxOutputBytes,
     );
   } on Object catch (e) {
     _fail('$e');
   }
   stdout.writeln(
     'listening on $socket for $caller, in $root, '
-    'timeout ${timeout.inSeconds}s, '
+    'timeout ${timeout.inSeconds}s, max output $maxOutputBytes bytes, '
     'running ${(programs.names.map((n) => '$n').toList()..sort()).join(' ')}',
   );
   final stop = Completer<void>();

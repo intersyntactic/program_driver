@@ -34,6 +34,7 @@ final class ProgramDriver {
     this.root,
     this.timeout,
     this.quiet,
+    this.maxOutputBytes,
     this._programs,
     this._socketUserCheck,
     this._socket,
@@ -53,17 +54,14 @@ final class ProgramDriver {
   /// printing.
   final Duration? quiet;
 
+  /// The most a program may print on stdout, and on stderr, before its group
+  /// is killed. Only that much is kept: what it printed past it is never
+  /// reported or recorded.
+  final int maxOutputBytes;
+
   final SocketUserCheck _socketUserCheck;
   final File _socket;
   final ServerSocket _server;
-
-  late final _executor = executor.Executor(
-    root: root,
-    consent: _decidedByTheAirlock,
-    timeout: timeout,
-    onStarted: (pid, _) => _running.add(pid),
-    onExited: _running.remove,
-  );
 
   /// The process groups of the programs running now, by their leaders' pids.
   final _running = <int>{};
@@ -71,6 +69,8 @@ final class ProgramDriver {
   /// A program to run is its name, its arguments and its stdin, so far
   /// smaller than this.
   static const maxRequest = 1 << 20;
+
+  static const defaultMaxOutputBytes = 8 << 20;
 
   /// Listens on [socket] for the user [caller] alone, starting the
   /// [programs] installed, and no others, in folders under [root]. The
@@ -85,6 +85,7 @@ final class ProgramDriver {
     required File socket,
     required Duration timeout,
     Duration? quiet,
+    int maxOutputBytes = defaultMaxOutputBytes,
     SocketUserReader? socketUserReader,
   }) async {
     final server = await _bind(socket);
@@ -97,6 +98,7 @@ final class ProgramDriver {
       root,
       timeout,
       quiet,
+      maxOutputBytes,
       programs,
       SocketUserCheck.only(caller, reader: socketUserReader),
       socket,
@@ -200,6 +202,10 @@ final class ProgramDriver {
 
   /// Reports what the program prints as it prints it, and returns only once
   /// all of it has been reported, so nothing is reported after the outcome.
+  ///
+  /// Once it prints more than [maxOutputBytes] on either channel, it is
+  /// killed with its group and ends [Killed], keeping what it printed up to
+  /// that many bytes on each, cut where a character ends.
   Future<Outcome<ExecResult>> _run(
     ProgramName program,
     Args args, {
@@ -209,19 +215,76 @@ final class ProgramDriver {
     if (path == null) {
       return Refused('no program named $program is installed here');
     }
-    final running = _executor.start(
-      [path, ...args.args],
-      input: args.stdin,
-      workingSubdir: args.inFolder.value,
-      quiet: quiet,
-      taps: executor.ExecTaps.none,
-    );
+    int? leader;
+    // One executor per run, so its start hands over this run's group alone.
+    final running =
+        executor.Executor(
+          root: root,
+          consent: _decidedByTheAirlock,
+          timeout: timeout,
+          onStarted: (pid, _) => _running.add(leader = pid),
+          onExited: _running.remove,
+        ).start(
+          [path, ...args.args],
+          input: args.stdin,
+          workingSubdir: args.inFolder.value,
+          quiet: quiet,
+          taps: executor.ExecTaps.none,
+        );
+    final out = BytesBuilder();
+    final err = BytesBuilder();
+    Channel? overflowed;
+    void take(Channel channel, String text) {
+      if (overflowed != null) return;
+      final bytes = utf8.encode(text);
+      final buffer = switch (channel) {
+        Channel.stdout => out,
+        Channel.stderr => err,
+      };
+      final room = maxOutputBytes - buffer.length;
+      final head = bytes.length <= room ? bytes : _wholeCharacters(bytes, room);
+      buffer.add(head);
+      if (head.isNotEmpty) {
+        report(
+          Printed(
+            channel,
+            head.length == bytes.length ? text : utf8.decode(head),
+          ),
+        );
+      }
+      if (head.length < bytes.length) {
+        overflowed = channel;
+        if (leader case final pid?) {
+          unawaited(Process.run('kill', ['-KILL', '--', '-$pid']));
+        }
+      }
+    }
+
     final (start, _, _) = await (
       running.result,
-      running.stdout.forEach((t) => report(Printed(Channel.stdout, t))),
-      running.stderr.forEach((t) => report(Printed(Channel.stderr, t))),
+      running.stdout.forEach((t) => take(Channel.stdout, t)),
+      running.stderr.forEach((t) => take(Channel.stderr, t)),
     ).wait;
+    if (overflowed case final channel?) {
+      return Ran(
+        Killed(
+          'printed more than $maxOutputBytes bytes on ${channel.name}',
+          stdout: utf8.decode(out.takeBytes()),
+          stderr: utf8.decode(err.takeBytes()),
+        ),
+      );
+    }
     return _outcome(start);
+  }
+
+  /// The longest start of [bytes], at most [room] long, that ends where a
+  /// UTF-8 character does.
+  static Uint8List _wholeCharacters(Uint8List bytes, int room) {
+    var end = room;
+    while (end > 0 && bytes[end] & 0xC0 == 0x80) {
+      end--;
+    }
+    return Uint8List.sublistView(bytes, 0, end);
   }
 
   Outcome<ExecResult> _outcome(executor.ExecStart start) => switch (start) {

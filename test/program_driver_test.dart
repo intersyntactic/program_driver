@@ -31,6 +31,7 @@ void main() {
   Future<ProgramDriver> start({
     UserId? caller,
     Duration timeout = const Duration(seconds: 30),
+    int maxOutputBytes = ProgramDriver.defaultMaxOutputBytes,
     SocketUserReader? socketUserReader,
   }) async {
     final driver = await ProgramDriver.start(
@@ -45,6 +46,7 @@ void main() {
       caller: caller ?? me,
       socket: socket,
       timeout: timeout,
+      maxOutputBytes: maxOutputBytes,
       socketUserReader: socketUserReader,
     );
     addTearDown(driver.close);
@@ -208,6 +210,63 @@ void main() {
       ProgramDriverSocket(socket).installedPrograms(),
       throwsA(isA<InstalledProgramsUnknown>()),
     );
+  });
+
+  /// Runs `sh -c [script]`, returning its outcome and what it reported.
+  Future<(Outcome<ExecResult>, List<Printed>)> runSh(String script) async {
+    final reported = <Printed>[];
+    final out = await ProgramDriverSocket(socket).runProgram(
+      sh,
+      Args(['-c', script]),
+      report: (p) => reported.add(p as Printed),
+    );
+    return (out, reported);
+  }
+
+  String printed(List<Printed> reported, Channel channel) => [
+    for (final p in reported)
+      if (p.channel == channel) p.text,
+  ].join();
+
+  test('kills a program that prints past its limit, keeping only that '
+      'much', () async {
+    await start(maxOutputBytes: 10);
+    final stopwatch = Stopwatch()..start();
+    final (out, reported) = await runSh(
+      'printf 0123456789abcdef; sleep 30; touch survived',
+    );
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+    final killed = (out as Ran<ExecResult>).output as Killed;
+    expect(killed.why, 'printed more than 10 bytes on stdout');
+    expect(killed.stdout, '0123456789');
+    expect(printed(reported, Channel.stdout), '0123456789');
+    expect(File('${root.path}/survived').existsSync(), isFalse);
+  });
+
+  test('lets a program print exactly its limit', () async {
+    await start(maxOutputBytes: 10);
+    final (out, _) = await runSh('printf 0123456789');
+    final exited = (out as Ran<ExecResult>).output as Exited;
+    expect(exited.exitCode, 0);
+    expect(exited.stdout, '0123456789');
+  });
+
+  test('cuts what it keeps where a character ends', () async {
+    // `a` is one byte and `é` two, so four bytes end inside the second `é`.
+    await start(maxOutputBytes: 4);
+    final (out, reported) = await runSh('printf aéé');
+    final killed = (out as Ran<ExecResult>).output as Killed;
+    expect(killed.stdout, 'aé');
+    expect(printed(reported, Channel.stdout), 'aé');
+  });
+
+  test('holds stderr to the same limit', () async {
+    await start(maxOutputBytes: 10);
+    final (out, reported) = await runSh('printf 0123456789abcdef >&2');
+    final killed = (out as Ran<ExecResult>).output as Killed;
+    expect(killed.why, 'printed more than 10 bytes on stderr');
+    expect(killed.stderr, '0123456789');
+    expect(printed(reported, Channel.stderr), '0123456789');
   });
 
   test('is refused when no driver is listening', () async {
