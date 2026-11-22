@@ -24,19 +24,29 @@ void main() {
     dir = await Directory('/tmp').createTemp('pd');
     root = await Directory('${dir.path}/home').create();
     socket = File('${dir.path}/s');
+    await Link('${dir.path}/programs/sh').create('/bin/sh', recursive: true);
   });
   tearDown(() => dir.delete(recursive: true));
 
   Future<ProgramDriver> start({
     UserId? caller,
     Duration timeout = const Duration(seconds: 30),
+    int maxOutputBytes = ProgramDriver.defaultMaxOutputBytes,
     SocketUserReader? socketUserReader,
   }) async {
     final driver = await ProgramDriver.start(
       root: root,
+      // A test's folders are its own user's, under a /tmp anyone may write,
+      // so the folder is read as if root had installed it.
+      programs: InstalledPrograms.read(
+        Directory('${dir.path}/programs'),
+        driverUser: me.number,
+        stat: (_) => (owner: 0, mode: 493), // 0755
+      ),
       caller: caller ?? me,
       socket: socket,
       timeout: timeout,
+      maxOutputBytes: maxOutputBytes,
       socketUserReader: socketUserReader,
     );
     addTearDown(driver.close);
@@ -78,7 +88,10 @@ void main() {
   test('answers a line per message, the last one finished', () async {
     await start();
     final lines = await raw(
-      jsonEncode(encodeProgramToRun(sh, Args(['-c', 'echo x']))),
+      jsonEncode({
+        'kind': 'run',
+        'programToRun': encodeProgramToRun(sh, Args(['-c', 'echo x'])),
+      }),
     );
     expect(
       [for (final l in lines) (jsonDecode(l) as Map)['kind']],
@@ -164,6 +177,106 @@ void main() {
     await run.then((_) {}, onError: (Object _) {});
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
     expect(File('${root.path}/survived').existsSync(), isFalse);
+  });
+
+  test('refuses a program not installed, though it is on the PATH', () async {
+    await start();
+    final out = await ProgramDriverSocket(socket).runProgram(
+      ProgramName.parse('cat')!,
+      Args([]),
+      report: (_) => fail('reported for a program never started'),
+    );
+    expect((out as Refused).why, contains('installed'));
+  });
+
+  test('refuses a name holding a slash sent on the wire', () async {
+    // ProgramName cannot hold one, so it is written by hand, as a caller
+    // that skipped the type would.
+    await start();
+    final lines = await raw(
+      jsonEncode({
+        'kind': 'run',
+        'programToRun': {
+          'program': '/bin/sh',
+          'args': encodeArgs(Args(['-c', 'touch ran'])),
+        },
+      }),
+    );
+    final finished = decodeProgramMessage(
+      jsonDecode(lines.single),
+      decodeExecResult,
+    ) as Finished<ExecResult>;
+    expect((finished.outcome as Refused).why, startsWith('not a start'));
+    expect(File('${root.path}/ran').existsSync(), isFalse);
+  });
+
+  test('says which programs it runs', () async {
+    await start();
+    expect(await ProgramDriverSocket(socket).installedPrograms(), {sh});
+  });
+
+  test('cannot say which programs it runs when none is listening', () async {
+    await expectLater(
+      ProgramDriverSocket(socket).installedPrograms(),
+      throwsA(isA<InstalledProgramsUnknown>()),
+    );
+  });
+
+  /// Runs `sh -c [script]`, returning its outcome and what it reported.
+  Future<(Outcome<ExecResult>, List<Printed>)> runSh(String script) async {
+    final reported = <Printed>[];
+    final out = await ProgramDriverSocket(socket).runProgram(
+      sh,
+      Args(['-c', script]),
+      report: (p) => reported.add(p as Printed),
+    );
+    return (out, reported);
+  }
+
+  String printed(List<Printed> reported, Channel channel) => [
+    for (final p in reported)
+      if (p.channel == channel) p.text,
+  ].join();
+
+  test('kills a program that prints past its limit, keeping only that '
+      'much', () async {
+    await start(maxOutputBytes: 10);
+    final stopwatch = Stopwatch()..start();
+    final (out, reported) = await runSh(
+      'printf 0123456789abcdef; sleep 30; touch survived',
+    );
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+    final killed = (out as Ran<ExecResult>).output as Killed;
+    expect(killed.why, 'printed more than 10 bytes on stdout');
+    expect(killed.stdout, '0123456789');
+    expect(printed(reported, Channel.stdout), '0123456789');
+    expect(File('${root.path}/survived').existsSync(), isFalse);
+  });
+
+  test('lets a program print exactly its limit', () async {
+    await start(maxOutputBytes: 10);
+    final (out, _) = await runSh('printf 0123456789');
+    final exited = (out as Ran<ExecResult>).output as Exited;
+    expect(exited.exitCode, 0);
+    expect(exited.stdout, '0123456789');
+  });
+
+  test('cuts what it keeps where a character ends', () async {
+    // `a` is one byte and `é` two, so four bytes end inside the second `é`.
+    await start(maxOutputBytes: 4);
+    final (out, reported) = await runSh('printf aéé');
+    final killed = (out as Ran<ExecResult>).output as Killed;
+    expect(killed.stdout, 'aé');
+    expect(printed(reported, Channel.stdout), 'aé');
+  });
+
+  test('holds stderr to the same limit', () async {
+    await start(maxOutputBytes: 10);
+    final (out, reported) = await runSh('printf 0123456789abcdef >&2');
+    final killed = (out as Ran<ExecResult>).output as Killed;
+    expect(killed.why, 'printed more than 10 bytes on stderr');
+    expect(killed.stderr, '0123456789');
+    expect(printed(reported, Channel.stderr), '0123456789');
   });
 
   test('is refused when no driver is listening', () async {

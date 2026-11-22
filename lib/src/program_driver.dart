@@ -7,15 +7,19 @@ import 'package:is_effects/is_effects.dart';
 import 'package:is_executor/is_executor.dart' as executor;
 import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 
+import 'installed_programs.dart';
+import 'request.dart';
+
 /// The program driver: a service on a Unix socket that starts programs under
 /// its root, the suit's home, for the airlock's user alone.
 ///
-/// A caller connects, sends one program to run (see [encodeProgramToRun]) as
-/// JSON and closes its side; the driver answers one line per
-/// [ProgramMessage] (see [encodeProgramMessage], with [encodeExecResult] for
-/// the outcome): a [Reported] for each piece the program prints, as it
-/// prints it, then one [Finished], and closes. Who is calling is read from
-/// the socket as the kernel reports it, never from the request.
+/// A caller connects, sends one request as JSON and closes its side. For a
+/// program to run, the driver answers one line per [ProgramMessage] (see
+/// [encodeProgramMessage], with [encodeExecResult] for the outcome): a
+/// [Reported] for each piece the program prints, as it prints it, then one
+/// [Finished]. Asked which programs are installed, it answers one line,
+/// their names. Then it closes. Who is calling is read from the socket as
+/// the kernel reports it, never from the request.
 ///
 /// It runs as the suit, so a program it starts can do what that suit can and
 /// no more: that is the wall. Each program runs in the folder its
@@ -30,12 +34,18 @@ final class ProgramDriver {
     this.root,
     this.timeout,
     this.quiet,
+    this.maxOutputBytes,
+    this._programs,
     this._socketUserCheck,
     this._socket,
     this._server,
   );
 
   final Directory root;
+
+  /// The programs it runs, found by name in the box's programs folder and
+  /// never on the PATH.
+  final InstalledPrograms _programs;
 
   /// How long a program may run before its group is killed.
   final Duration timeout;
@@ -44,17 +54,14 @@ final class ProgramDriver {
   /// printing.
   final Duration? quiet;
 
+  /// The most a program may print on stdout, and on stderr, before its group
+  /// is killed. Only that much is kept: what it printed past it is never
+  /// reported or recorded.
+  final int maxOutputBytes;
+
   final SocketUserCheck _socketUserCheck;
   final File _socket;
   final ServerSocket _server;
-
-  late final _executor = executor.Executor(
-    root: root,
-    consent: _decidedByTheAirlock,
-    timeout: timeout,
-    onStarted: (pid, _) => _running.add(pid),
-    onExited: _running.remove,
-  );
 
   /// The process groups of the programs running now, by their leaders' pids.
   final _running = <int>{};
@@ -63,17 +70,22 @@ final class ProgramDriver {
   /// smaller than this.
   static const maxRequest = 1 << 20;
 
-  /// Listens on [socket] for the user [caller] alone, starting programs under
-  /// [root]. The socket is made readable and writable by its group, the
-  /// suit's own, which is how the airlock's user reaches it; a socket file
-  /// nothing listens on is replaced. A connection whose user [socketUserReader]
+  static const defaultMaxOutputBytes = 8 << 20;
+
+  /// Listens on [socket] for the user [caller] alone, starting the
+  /// [programs] installed, and no others, in folders under [root]. The
+  /// socket is made readable and writable by its group, the suit's own,
+  /// which is how the airlock's user reaches it; a socket file nothing
+  /// listens on is replaced. A connection whose user [socketUserReader]
   /// cannot read is turned away.
   static Future<ProgramDriver> start({
     required Directory root,
+    required InstalledPrograms programs,
     required UserId caller,
     required File socket,
     required Duration timeout,
     Duration? quiet,
+    int maxOutputBytes = defaultMaxOutputBytes,
     SocketUserReader? socketUserReader,
   }) async {
     final server = await _bind(socket);
@@ -86,6 +98,8 @@ final class ProgramDriver {
       root,
       timeout,
       quiet,
+      maxOutputBytes,
+      programs,
       SocketUserCheck.only(caller, reader: socketUserReader),
       socket,
       server,
@@ -135,36 +149,49 @@ final class ProgramDriver {
         }
         request.add(chunk);
       }
-      void send(ProgramMessage<ExecResult> message) => socket.add(
-        utf8.encode(
-          '${jsonEncode(encodeProgramMessage(message, encodeExecResult))}\n',
-        ),
-      );
-      final outcome = tooLarge
-          ? const Refused('request too large')
-          : await _answer(request.takeBytes(), send);
-      send(Finished(outcome));
+      void send(Object? json) =>
+          socket.add(utf8.encode('${jsonEncode(json)}\n'));
+      void message(ProgramMessage<ExecResult> m) =>
+          send(encodeProgramMessage(m, encodeExecResult));
+      if (tooLarge) {
+        message(const Finished(Refused('request too large')));
+      } else {
+        await _answer(request.takeBytes(), send, message);
+      }
       await socket.close();
     } on SocketException {
       socket.destroy();
     }
   }
 
-  /// Runs the program to run in [bytes], reporting through [send].
-  Future<Outcome<ExecResult>> _answer(
+  /// Answers the request in [bytes]: a run with a line per message through
+  /// [message], a list of the installed programs with one line through
+  /// [send].
+  Future<void> _answer(
     Uint8List bytes,
-    void Function(ProgramMessage<ExecResult>) send,
+    void Function(Object? json) send,
+    void Function(ProgramMessage<ExecResult>) message,
   ) async {
-    final ProgramName program;
-    final Args args;
+    final ProgramDriverRequest request;
     try {
-      (program, args) = decodeProgramToRun(jsonDecode(utf8.decode(bytes)));
+      request = ProgramDriverRequest.fromJson(jsonDecode(utf8.decode(bytes)));
     } on FormatException catch (e) {
       // Infra's deploy proof matches this text on the box, so it changes
       // only together with that proof.
-      return Refused('not a start: ${e.message}');
+      message(Finished(Refused('not a start: ${e.message}')));
+      return;
     }
-    return _run(program, args, report: (p) => send(Reported(p)));
+    switch (request) {
+      case RunProgram(:final program, :final args):
+        final outcome = await _run(
+          program,
+          args,
+          report: (p) => message(Reported(p)),
+        );
+        message(Finished(outcome));
+      case ListInstalledPrograms():
+        send(encodeProgramNames(_programs.names));
+    }
   }
 
   /// The executor's consent, already given: a start reaches this driver only
@@ -175,24 +202,89 @@ final class ProgramDriver {
 
   /// Reports what the program prints as it prints it, and returns only once
   /// all of it has been reported, so nothing is reported after the outcome.
+  ///
+  /// Once it prints more than [maxOutputBytes] on either channel, it is
+  /// killed with its group and ends [Killed], keeping what it printed up to
+  /// that many bytes on each, cut where a character ends.
   Future<Outcome<ExecResult>> _run(
     ProgramName program,
     Args args, {
     required Report report,
   }) async {
-    final running = _executor.start(
-      [program.value, ...args.args],
-      input: args.stdin,
-      workingSubdir: args.inFolder.value,
-      quiet: quiet,
-      taps: executor.ExecTaps.none,
-    );
+    final path = _programs.pathOf(program);
+    if (path == null) {
+      return Refused('no program named $program is installed here');
+    }
+    int? leader;
+    // One executor per run, so its start hands over this run's group alone.
+    final running =
+        executor.Executor(
+          root: root,
+          consent: _decidedByTheAirlock,
+          timeout: timeout,
+          onStarted: (pid, _) => _running.add(leader = pid),
+          onExited: _running.remove,
+        ).start(
+          [path, ...args.args],
+          input: args.stdin,
+          workingSubdir: args.inFolder.value,
+          quiet: quiet,
+          taps: executor.ExecTaps.none,
+        );
+    final out = BytesBuilder();
+    final err = BytesBuilder();
+    Channel? overflowed;
+    void take(Channel channel, String text) {
+      if (overflowed != null) return;
+      final bytes = utf8.encode(text);
+      final buffer = switch (channel) {
+        Channel.stdout => out,
+        Channel.stderr => err,
+      };
+      final room = maxOutputBytes - buffer.length;
+      final head = bytes.length <= room ? bytes : _wholeCharacters(bytes, room);
+      buffer.add(head);
+      if (head.isNotEmpty) {
+        report(
+          Printed(
+            channel,
+            head.length == bytes.length ? text : utf8.decode(head),
+          ),
+        );
+      }
+      if (head.length < bytes.length) {
+        overflowed = channel;
+        if (leader case final pid?) {
+          unawaited(Process.run('kill', ['-KILL', '--', '-$pid']));
+        }
+      }
+    }
+
     final (start, _, _) = await (
       running.result,
-      running.stdout.forEach((t) => report(Printed(Channel.stdout, t))),
-      running.stderr.forEach((t) => report(Printed(Channel.stderr, t))),
+      running.stdout.forEach((t) => take(Channel.stdout, t)),
+      running.stderr.forEach((t) => take(Channel.stderr, t)),
     ).wait;
+    if (overflowed case final channel?) {
+      return Ran(
+        Killed(
+          'printed more than $maxOutputBytes bytes on ${channel.name}',
+          stdout: utf8.decode(out.takeBytes()),
+          stderr: utf8.decode(err.takeBytes()),
+        ),
+      );
+    }
     return _outcome(start);
+  }
+
+  /// The longest start of [bytes], at most [room] long, that ends where a
+  /// UTF-8 character does.
+  static Uint8List _wholeCharacters(Uint8List bytes, int room) {
+    var end = room;
+    while (end > 0 && bytes[end] & 0xC0 == 0x80) {
+      end--;
+    }
+    return Uint8List.sublistView(bytes, 0, end);
   }
 
   Outcome<ExecResult> _outcome(executor.ExecStart start) => switch (start) {

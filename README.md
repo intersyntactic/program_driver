@@ -16,15 +16,43 @@ kernel reports it, never from the request.
 
 ## The wire
 
-One connection per run, one JSON value per line, with the codecs from
-is_effects:
+One connection per request, one JSON value per line, with the codecs from
+is_effects. The caller sends one request and closes its side:
 
-- the caller sends `encodeProgramToRun(program, args)` and closes its side;
-- the service answers a `Reported` for each piece the program prints, as it
+- `{"kind": "run", "programToRun": encodeProgramToRun(program, args)}`: the
+  service answers a `Reported` for each piece the program prints, as it
   prints it, then one `Finished` with the outcome (`encodeProgramMessage`
-  with `encodeExecResult`), and closes.
+  with `encodeExecResult`), and closes;
+- `{"kind": "list"}`: the service answers one line, the names of the
+  programs it runs as a sorted list, and closes.
 
-`ProgramDriverSocket` is that caller, for the airlock.
+Anything else is answered with a `Finished` whose outcome is
+`Refused("not a start: …")`. `ProgramDriverSocket` is that caller, for the
+airlock.
+
+## The programs it runs
+
+It runs only the programs in the box's programs folder, never one found on
+the PATH. Each entry is named after its program and is that program or a
+symlink to it: `ln -s /usr/bin/git programs/git`, or a binary put there
+whole. The folder is read once, as the driver starts, so the list
+loop_launcher checks a trajectory against as it starts it is the list the
+driver keeps to.
+
+It will not start if its own user could change what runs: if that user
+owns, or anyone besides the owner may write, the folder, an entry's
+program, or any folder above either. A suit's home is the suit's, so no
+entry may lead there.
+
+A program may print at most `PROGRAM_DRIVER_MAX_OUTPUT_BYTES` on stdout, and
+as much on stderr. The first time it prints past that, its group is killed
+and it ends `Killed("printed more than N bytes on stdout")`, keeping what it
+printed up to N bytes, cut where a character ends; nothing past that is
+reported or recorded. It is `Killed`, not `Refused`, because the program
+ran and may already have done something.
+
+The list says what the airlock may ask for; it confines nothing. The suit
+is the wall: a listed `sh`, `dart` or `git` can do anything the suit can.
 
 ## Running it
 
@@ -36,4 +64,9 @@ and `program-open@.service` (infra's), which set:
   user is in, can reach it;
 - `PROGRAM_DRIVER_CALLER`: the one user, by name or id, whose programs it
   runs;
-- `PROGRAM_DRIVER_ROOT`: `/home/%i`; every run's folder must resolve inside it.
+- `PROGRAM_DRIVER_ROOT`: `/home/%i`; every run's folder must resolve inside it;
+- `PROGRAM_DRIVER_PROGRAMS`: the box's programs folder, which the box's
+  install fills. It is required: without it, or with a folder it will not
+  start with, it exits 78;
+- `PROGRAM_DRIVER_MAX_OUTPUT_BYTES`, optional: the most a program may print
+  on each of stdout and stderr, 8 MiB unless set.

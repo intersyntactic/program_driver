@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+- BREAKING: runs only the programs in the box's programs folder
+  (`PROGRAM_DRIVER_PROGRAMS`, read once into `InstalledPrograms`), never one
+  found on the PATH; any other name is `Refused`. It will not start with a
+  folder its own user could change.
+- BREAKING: requests are tagged. `{"kind": "run", "programToRun": …}` runs
+  a program; `{"kind": "list"}` answers the installed programs' names.
+- `ProgramDriverSocket` implements is_effects' `ListsInstalledPrograms`:
+  `installedPrograms()` is the programs the driver runs.
+- Requires is_effects `^0.13.0`.
+- A program that prints more than `maxOutputBytes` on stdout or stderr
+  (`PROGRAM_DRIVER_MAX_OUTPUT_BYTES`, 8 MiB unless set) is killed with its
+  group and ends `Killed`, keeping that much, cut where a character ends.
+
 ## 0.1.0
 
 - `ProgramDriver`: a service on a Unix socket, answering only its caller's

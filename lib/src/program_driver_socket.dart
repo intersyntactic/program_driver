@@ -3,13 +3,40 @@ import 'dart:io';
 
 import 'package:is_effects/is_effects.dart';
 
-/// The airlock's connection to the [ProgramDriver] at [socket]: each program
-/// the airlock passes on is sent there, and what comes back is reported as
-/// it comes.
-final class ProgramDriverSocket implements RunsPrograms {
+import 'request.dart';
+
+/// The connection to the [ProgramDriver] at [socket]: each program the
+/// airlock passes on is sent there, and what comes back is reported as it
+/// comes; and loop_launcher asks it which programs it runs.
+final class ProgramDriverSocket
+    implements RunsPrograms, ListsInstalledPrograms {
   ProgramDriverSocket(this.socket);
 
   final File socket;
+
+  /// The programs the driver runs, as it loaded them when it started.
+  /// Throws [InstalledProgramsUnknown] when it cannot be asked or does not
+  /// answer with them.
+  @override
+  Future<Set<ProgramName>> installedPrograms() async {
+    try {
+      final s = await Socket.connect(
+        InternetAddress(socket.path, type: InternetAddressType.unix),
+        0,
+      );
+      s.add(utf8.encode(jsonEncode(const ListInstalledPrograms().toJson())));
+      await s.close();
+      final answer = await utf8.decoder.bind(s).join();
+      if (!answer.endsWith('\n')) {
+        throw const InstalledProgramsUnknown('no answer');
+      }
+      return decodeProgramNames(jsonDecode(answer));
+    } on SocketException catch (e) {
+      throw InstalledProgramsUnknown(e.message);
+    } on FormatException catch (e) {
+      throw InstalledProgramsUnknown('bad answer: ${e.message}');
+    }
+  }
 
   /// [Refused] only when the driver could not be reached, so nothing was
   /// sent. Once the program to run is sent, a run that ends without its
@@ -32,7 +59,7 @@ final class ProgramDriverSocket implements RunsPrograms {
       return Refused('program driver: ${e.message}');
     }
     try {
-      s.add(utf8.encode(jsonEncode(encodeProgramToRun(program, args))));
+      s.add(utf8.encode(jsonEncode(RunProgram(program, args).toJson())));
       await s.close();
       await for (final line
           in s
@@ -66,4 +93,15 @@ final class OutcomeUnknown implements Exception {
 
   @override
   String toString() => 'program driver: outcome unknown: $why';
+}
+
+/// The driver was asked which programs it runs and did not say, because
+/// [why].
+final class InstalledProgramsUnknown implements Exception {
+  const InstalledProgramsUnknown(this.why);
+
+  final String why;
+
+  @override
+  String toString() => 'program driver: installed programs unknown: $why';
 }
