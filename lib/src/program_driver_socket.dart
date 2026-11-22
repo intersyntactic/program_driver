@@ -5,10 +5,11 @@ import 'package:is_effects/is_effects.dart';
 
 import 'request.dart';
 
-/// The airlock's connection to the [ProgramDriver] at [socket]: each program
-/// the airlock passes on is sent there, and what comes back is reported as
-/// it comes.
-final class ProgramDriverSocket implements RunsPrograms {
+/// The connection to the [ProgramDriver] at [socket]: each program the
+/// airlock passes on is sent there, and what comes back is reported as it
+/// comes; and loop_launcher asks it which programs it runs.
+final class ProgramDriverSocket
+    implements RunsPrograms, ListsInstalledPrograms {
   ProgramDriverSocket(this.socket);
 
   final File socket;
@@ -16,6 +17,7 @@ final class ProgramDriverSocket implements RunsPrograms {
   /// The programs the driver runs, as it loaded them when it started.
   /// Throws [InstalledProgramsUnknown] when it cannot be asked or does not
   /// answer with them.
+  @override
   Future<Set<ProgramName>> installedPrograms() async {
     try {
       final s = await Socket.connect(

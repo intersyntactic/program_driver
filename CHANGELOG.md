@@ -8,7 +8,9 @@
   folder its own user could change.
 - BREAKING: requests are tagged. `{"kind": "run", "programToRun": …}` runs
   a program; `{"kind": "list"}` answers the installed programs' names.
-- `ProgramDriverSocket.installedPrograms()`: the programs the driver runs.
+- `ProgramDriverSocket` implements is_effects' `ListsInstalledPrograms`:
+  `installedPrograms()` is the programs the driver runs.
+- Requires is_effects `^0.13.0`.
 - A program that prints more than `maxOutputBytes` on stdout or stderr
   (`PROGRAM_DRIVER_MAX_OUTPUT_BYTES`, 8 MiB unless set) is killed with its
   group and ends `Killed`, keeping that much, cut where a character ends.

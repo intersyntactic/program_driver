@@ -189,14 +189,24 @@ void main() {
     expect((out as Refused).why, contains('installed'));
   });
 
-  test('refuses a name holding a slash, which finds no entry', () async {
+  test('refuses a name holding a slash sent on the wire', () async {
+    // ProgramName cannot hold one, so it is written by hand, as a caller
+    // that skipped the type would.
     await start();
-    final out = await ProgramDriverSocket(socket).runProgram(
-      ProgramName.parse('/bin/sh')!,
-      Args(['-c', 'touch ran']),
-      report: (_) {},
+    final lines = await raw(
+      jsonEncode({
+        'kind': 'run',
+        'programToRun': {
+          'program': '/bin/sh',
+          'args': encodeArgs(Args(['-c', 'touch ran'])),
+        },
+      }),
     );
-    expect(out, isA<Refused>());
+    final finished = decodeProgramMessage(
+      jsonDecode(lines.single),
+      decodeExecResult,
+    ) as Finished<ExecResult>;
+    expect((finished.outcome as Refused).why, startsWith('not a start'));
     expect(File('${root.path}/ran').existsSync(), isFalse);
   });
 

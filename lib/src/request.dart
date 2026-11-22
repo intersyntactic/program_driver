@@ -40,26 +40,3 @@ final class ListInstalledPrograms extends ProgramDriverRequest {
   @override
   Object? toJson() => {'kind': 'list'};
 }
-
-/// [names] as a sorted JSON list, so one set always encodes the same.
-Object? encodeProgramNames(Set<ProgramName> names) =>
-    [for (final n in names) n.value]..sort();
-
-/// The set [encodeProgramNames] wrote. Throws [FormatException] for
-/// anything else, a duplicate included.
-Set<ProgramName> decodeProgramNames(Object? json) {
-  if (json is! List<Object?>) {
-    throw const FormatException('program names: not a list');
-  }
-  final names = <ProgramName>{};
-  for (final raw in json) {
-    final name = raw is String ? ProgramName.parse(raw) : null;
-    if (name == null) {
-      throw FormatException('program names: not a program\'s name: $raw');
-    }
-    if (!names.add(name)) {
-      throw FormatException('program names: $name twice');
-    }
-  }
-  return names;
-}
