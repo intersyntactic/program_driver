@@ -35,8 +35,9 @@ airlock.
 It runs only the programs in the box's programs folder, never one found on
 the PATH. Each entry is named after its program and is that program or a
 symlink to it: `ln -s /usr/bin/git programs/git`, or a binary put there
-whole. The folder is read once, as the driver starts, so the list the
-airlock checks a trajectory against is the list the driver keeps to.
+whole. The folder is read once, as the driver starts, so the list
+loop_launcher checks a trajectory against as it starts it is the list the
+driver keeps to.
 
 It will not start if its own user could change what runs: if that user
 owns, or anyone besides the owner may write, the folder, an entry's

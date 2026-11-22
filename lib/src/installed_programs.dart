@@ -9,8 +9,9 @@ typedef FileOwnership = ({int owner, int mode});
 /// entry is named after the program it runs, and is that program or a
 /// symlink to it.
 ///
-/// Read once, as the driver starts, so the list the airlock checks a
-/// trajectory against is the list the driver keeps to for its whole life.
+/// Read once, as the driver starts, so the list loop_launcher checks a
+/// trajectory against as it starts it is the list the driver keeps to for
+/// its whole life.
 /// A name is found only as an entry of the folder, never on the PATH, so a
 /// name holding a `/` finds nothing.
 final class InstalledPrograms {
