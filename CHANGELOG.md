@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0
 
 - BREAKING: runs only the programs in the box's programs folder
   (`PROGRAM_DRIVER_PROGRAMS`, read once into `InstalledPrograms`), never one
