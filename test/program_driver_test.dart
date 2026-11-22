@@ -24,6 +24,7 @@ void main() {
     dir = await Directory('/tmp').createTemp('pd');
     root = await Directory('${dir.path}/home').create();
     socket = File('${dir.path}/s');
+    await Link('${dir.path}/programs/sh').create('/bin/sh', recursive: true);
   });
   tearDown(() => dir.delete(recursive: true));
 
@@ -34,6 +35,13 @@ void main() {
   }) async {
     final driver = await ProgramDriver.start(
       root: root,
+      // A test's folders are its own user's, under a /tmp anyone may write,
+      // so the folder is read as if root had installed it.
+      programs: InstalledPrograms.read(
+        Directory('${dir.path}/programs'),
+        driverUser: me.number,
+        stat: (_) => (owner: 0, mode: 493), // 0755
+      ),
       caller: caller ?? me,
       socket: socket,
       timeout: timeout,
@@ -78,7 +86,10 @@ void main() {
   test('answers a line per message, the last one finished', () async {
     await start();
     final lines = await raw(
-      jsonEncode(encodeProgramToRun(sh, Args(['-c', 'echo x']))),
+      jsonEncode({
+        'kind': 'run',
+        'programToRun': encodeProgramToRun(sh, Args(['-c', 'echo x'])),
+      }),
     );
     expect(
       [for (final l in lines) (jsonDecode(l) as Map)['kind']],
@@ -164,6 +175,39 @@ void main() {
     await run.then((_) {}, onError: (Object _) {});
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
     expect(File('${root.path}/survived').existsSync(), isFalse);
+  });
+
+  test('refuses a program not installed, though it is on the PATH', () async {
+    await start();
+    final out = await ProgramDriverSocket(socket).runProgram(
+      ProgramName.parse('cat')!,
+      Args([]),
+      report: (_) => fail('reported for a program never started'),
+    );
+    expect((out as Refused).why, contains('installed'));
+  });
+
+  test('refuses a name holding a slash, which finds no entry', () async {
+    await start();
+    final out = await ProgramDriverSocket(socket).runProgram(
+      ProgramName.parse('/bin/sh')!,
+      Args(['-c', 'touch ran']),
+      report: (_) {},
+    );
+    expect(out, isA<Refused>());
+    expect(File('${root.path}/ran').existsSync(), isFalse);
+  });
+
+  test('says which programs it runs', () async {
+    await start();
+    expect(await ProgramDriverSocket(socket).installedPrograms(), {sh});
+  });
+
+  test('cannot say which programs it runs when none is listening', () async {
+    await expectLater(
+      ProgramDriverSocket(socket).installedPrograms(),
+      throwsA(isA<InstalledProgramsUnknown>()),
+    );
   });
 
   test('is refused when no driver is listening', () async {

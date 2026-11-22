@@ -7,15 +7,19 @@ import 'package:is_effects/is_effects.dart';
 import 'package:is_executor/is_executor.dart' as executor;
 import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 
+import 'installed_programs.dart';
+import 'request.dart';
+
 /// The program driver: a service on a Unix socket that starts programs under
 /// its root, the suit's home, for the airlock's user alone.
 ///
-/// A caller connects, sends one program to run (see [encodeProgramToRun]) as
-/// JSON and closes its side; the driver answers one line per
-/// [ProgramMessage] (see [encodeProgramMessage], with [encodeExecResult] for
-/// the outcome): a [Reported] for each piece the program prints, as it
-/// prints it, then one [Finished], and closes. Who is calling is read from
-/// the socket as the kernel reports it, never from the request.
+/// A caller connects, sends one request as JSON and closes its side. For a
+/// program to run, the driver answers one line per [ProgramMessage] (see
+/// [encodeProgramMessage], with [encodeExecResult] for the outcome): a
+/// [Reported] for each piece the program prints, as it prints it, then one
+/// [Finished]. Asked which programs are installed, it answers one line,
+/// their names. Then it closes. Who is calling is read from the socket as
+/// the kernel reports it, never from the request.
 ///
 /// It runs as the suit, so a program it starts can do what that suit can and
 /// no more: that is the wall. Each program runs in the folder its
@@ -30,12 +34,17 @@ final class ProgramDriver {
     this.root,
     this.timeout,
     this.quiet,
+    this._programs,
     this._socketUserCheck,
     this._socket,
     this._server,
   );
 
   final Directory root;
+
+  /// The programs it runs, found by name in the box's programs folder and
+  /// never on the PATH.
+  final InstalledPrograms _programs;
 
   /// How long a program may run before its group is killed.
   final Duration timeout;
@@ -63,13 +72,15 @@ final class ProgramDriver {
   /// smaller than this.
   static const maxRequest = 1 << 20;
 
-  /// Listens on [socket] for the user [caller] alone, starting programs under
-  /// [root]. The socket is made readable and writable by its group, the
-  /// suit's own, which is how the airlock's user reaches it; a socket file
-  /// nothing listens on is replaced. A connection whose user [socketUserReader]
+  /// Listens on [socket] for the user [caller] alone, starting the
+  /// [programs] installed, and no others, in folders under [root]. The
+  /// socket is made readable and writable by its group, the suit's own,
+  /// which is how the airlock's user reaches it; a socket file nothing
+  /// listens on is replaced. A connection whose user [socketUserReader]
   /// cannot read is turned away.
   static Future<ProgramDriver> start({
     required Directory root,
+    required InstalledPrograms programs,
     required UserId caller,
     required File socket,
     required Duration timeout,
@@ -86,6 +97,7 @@ final class ProgramDriver {
       root,
       timeout,
       quiet,
+      programs,
       SocketUserCheck.only(caller, reader: socketUserReader),
       socket,
       server,
@@ -135,36 +147,49 @@ final class ProgramDriver {
         }
         request.add(chunk);
       }
-      void send(ProgramMessage<ExecResult> message) => socket.add(
-        utf8.encode(
-          '${jsonEncode(encodeProgramMessage(message, encodeExecResult))}\n',
-        ),
-      );
-      final outcome = tooLarge
-          ? const Refused('request too large')
-          : await _answer(request.takeBytes(), send);
-      send(Finished(outcome));
+      void send(Object? json) =>
+          socket.add(utf8.encode('${jsonEncode(json)}\n'));
+      void message(ProgramMessage<ExecResult> m) =>
+          send(encodeProgramMessage(m, encodeExecResult));
+      if (tooLarge) {
+        message(const Finished(Refused('request too large')));
+      } else {
+        await _answer(request.takeBytes(), send, message);
+      }
       await socket.close();
     } on SocketException {
       socket.destroy();
     }
   }
 
-  /// Runs the program to run in [bytes], reporting through [send].
-  Future<Outcome<ExecResult>> _answer(
+  /// Answers the request in [bytes]: a run with a line per message through
+  /// [message], a list of the installed programs with one line through
+  /// [send].
+  Future<void> _answer(
     Uint8List bytes,
-    void Function(ProgramMessage<ExecResult>) send,
+    void Function(Object? json) send,
+    void Function(ProgramMessage<ExecResult>) message,
   ) async {
-    final ProgramName program;
-    final Args args;
+    final ProgramDriverRequest request;
     try {
-      (program, args) = decodeProgramToRun(jsonDecode(utf8.decode(bytes)));
+      request = ProgramDriverRequest.fromJson(jsonDecode(utf8.decode(bytes)));
     } on FormatException catch (e) {
       // Infra's deploy proof matches this text on the box, so it changes
       // only together with that proof.
-      return Refused('not a start: ${e.message}');
+      message(Finished(Refused('not a start: ${e.message}')));
+      return;
     }
-    return _run(program, args, report: (p) => send(Reported(p)));
+    switch (request) {
+      case RunProgram(:final program, :final args):
+        final outcome = await _run(
+          program,
+          args,
+          report: (p) => message(Reported(p)),
+        );
+        message(Finished(outcome));
+      case ListInstalledPrograms():
+        send(encodeProgramNames(_programs.names));
+    }
   }
 
   /// The executor's consent, already given: a start reaches this driver only
@@ -180,8 +205,12 @@ final class ProgramDriver {
     Args args, {
     required Report report,
   }) async {
+    final path = _programs.pathOf(program);
+    if (path == null) {
+      return Refused('no program named $program is installed here');
+    }
     final running = _executor.start(
-      [program.value, ...args.args],
+      [path, ...args.args],
       input: args.stdin,
       workingSubdir: args.inFolder.value,
       quiet: quiet,
