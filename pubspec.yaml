@@ -10,7 +10,7 @@ environment:
   sdk: ^3.13.0
 
 dependencies:
-  is_effects: ^0.13.0
+  is_effects: ^0.14.1
   is_executor: ^0.1.0
   is_unix_socket_user_check: ^0.1.0
 

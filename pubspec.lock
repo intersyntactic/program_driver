@@ -149,10 +149,10 @@ packages:
     dependency: "direct main"
     description:
       name: is_effects
-      sha256: "5de2d192d33f661173e4a37bbb9fe3877510bacf7a884276134f5bf1ef74704b"
+      sha256: "9ef281201ea68859bca4bb2afa5b20ecc76250ede4d186751b734679b5c33e16"
       url: "https://pub.dev"
     source: hosted
-    version: "0.13.0"
+    version: "0.14.1"
   is_executor:
     dependency: "direct main"
     description:
