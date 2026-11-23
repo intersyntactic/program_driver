@@ -1,0 +1,25 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    # The bare Dart image, not the runner, so the tests see a box without
+    # the runner's extra tools (it has no `kill` program, for one).
+    runs-on: ubuntu-latest
+    container: dart:stable
+    steps:
+      - uses: actions/checkout@v4
+      # As root every path is the driver's own and InstalledPrograms refuses
+      # them all, so the tests run as an ordinary user.
+      - name: Add a user to run as
+        run: useradd -m tester && chown -R tester "$GITHUB_WORKSPACE"
+      - name: Get packages
+        run: su tester -c 'dart pub get'
+      - name: Analyze
+        run: su tester -c 'dart analyze --fatal-infos'
+      - name: Test
+        run: su tester -c 'dart test'
