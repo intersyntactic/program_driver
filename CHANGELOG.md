@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- Kills a program's group by sending the signal itself
+  (`Process.killPid` on the negated pid) instead of running the `kill`
+  program, which a box without procps does not have. On such a box 0.2.0
+  could not kill a program past its output limit, and `close()` threw.
+- Requires is_effects `^0.14.2`.
+
 ## 0.2.0
 
 - BREAKING: runs only the programs in the box's programs folder
