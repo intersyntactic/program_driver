@@ -130,7 +130,7 @@ final class ProgramDriver {
     await _server.close();
     if (_socket.existsSync()) _socket.deleteSync();
     for (final leader in _running.toList()) {
-      await Process.run('kill', ['-KILL', '--', '-$leader']);
+      Process.killPid(-leader, ProcessSignal.sigkill);
     }
   }
 
@@ -255,7 +255,7 @@ final class ProgramDriver {
       if (head.length < bytes.length) {
         overflowed = channel;
         if (leader case final pid?) {
-          unawaited(Process.run('kill', ['-KILL', '--', '-$pid']));
+          Process.killPid(-pid, ProcessSignal.sigkill);
         }
       }
     }
