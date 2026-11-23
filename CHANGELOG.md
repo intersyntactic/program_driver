@@ -6,7 +6,7 @@
   (`Process.killPid` on the negated pid) instead of running the `kill`
   program, which a box without procps does not have. On such a box 0.2.0
   could not kill a program past its output limit, and `close()` threw.
-- Requires is_effects `^0.14.1`.
+- Requires is_effects `^0.14.2`.
 
 ## 0.2.0
 
