@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1
+
+- `close()` and the output limit kill a run through is_executor's
+  `Running.kill()`: the group and the process itself, then the group again
+  until it is empty. 0.3.0 sent one signal to the group, and only once the
+  program had reported its pid, so a program started just before `close()`
+  ran on; `close()` now also waits until every run is gone.
+- A run killed by `close()` ends `Killed("killed as the program driver
+  stopped")`.
+- Requires is_executor `^0.2.0`.
+
 ## 0.3.0
 
 - BREAKING: `ProgramDriverSocket`, `OutcomeUnknown` and

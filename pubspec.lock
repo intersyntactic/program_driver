@@ -157,10 +157,10 @@ packages:
     dependency: "direct main"
     description:
       name: is_executor
-      sha256: c7d0325d96462c98408f8674dd39b4542b0c66ce33dff54edfcc735024f2f78b
+      sha256: "05757165d2aea636e626d9644f5531b80a6890669971a49a5f041aae636adb40"
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.0"
+    version: "0.2.0"
   is_path_confinement:
     dependency: transitive
     description:

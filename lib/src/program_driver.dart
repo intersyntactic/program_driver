@@ -64,8 +64,8 @@ final class ProgramDriver {
   final File _socket;
   final ServerSocket _server;
 
-  /// The process groups of the programs running now, by their leaders' pids.
-  final _running = <int>{};
+  /// The runs not yet finished, each able to kill its program's group.
+  final _running = <executor.Running>{};
 
   /// A program to run is its name, its arguments and its stdin, so far
   /// smaller than this.
@@ -131,13 +131,11 @@ final class ProgramDriver {
   }
 
   /// Stops listening and kills the process group of every program still
-  /// running, so none outlives the driver.
+  /// running, completing once each is gone, so none outlives the driver.
   Future<void> close() async {
     await _server.close();
     if (_socket.existsSync()) _socket.deleteSync();
-    for (final leader in _running.toList()) {
-      Process.killPid(-leader, ProcessSignal.sigkill);
-    }
+    await Future.wait([for (final run in _running.toList()) run.kill()]);
   }
 
   Future<void> _serve(Socket socket) async {
@@ -226,15 +224,11 @@ final class ProgramDriver {
     if (path == null) {
       return Refused('no program named $program is installed here');
     }
-    int? leader;
-    // One executor per run, so its start hands over this run's group alone.
     final running =
         executor.Executor(
           root: root,
           consent: _decidedByTheAirlock,
           timeout: timeout,
-          onStarted: (pid, _) => _running.add(leader = pid),
-          onExited: _running.remove,
         ).start(
           [path, ...args.args],
           input: args.stdin,
@@ -242,6 +236,8 @@ final class ProgramDriver {
           quiet: quiet,
           taps: executor.ExecTaps.none,
         );
+    _running.add(running);
+    unawaited(running.result.whenComplete(() => _running.remove(running)));
     final out = BytesBuilder();
     final err = BytesBuilder();
     Channel? overflowed;
@@ -265,9 +261,7 @@ final class ProgramDriver {
       }
       if (head.length < bytes.length) {
         overflowed = channel;
-        if (leader case final pid?) {
-          Process.killPid(-pid, ProcessSignal.sigkill);
-        }
+        unawaited(running.kill());
       }
     }
 
@@ -299,18 +293,24 @@ final class ProgramDriver {
   }
 
   Outcome<ExecResult> _outcome(executor.ExecStart start) => switch (start) {
-    executor.ExecStarted(:final result) => Ran(switch (result) {
-      executor.ExecResult(:final silentFor?) => Killed(
-        'printed nothing for ${silentFor.inSeconds}s',
+    executor.ExecStarted(:final result) => Ran(switch (result.whyKilled) {
+      executor.KilledForSilence(:final quiet) => Killed(
+        'printed nothing for ${quiet.inSeconds}s',
         stdout: result.stdout,
         stderr: result.stderr,
       ),
-      executor.ExecResult(timedOut: true) => Killed(
+      executor.KilledForTimeout() => Killed(
         'timed out after ${timeout.inSeconds}s',
         stdout: result.stdout,
         stderr: result.stderr,
       ),
-      _ => Exited(
+      // The overflow kill returns before this, so only close() is left.
+      executor.KilledOnRequest() => Killed(
+        'killed as the program driver stopped',
+        stdout: result.stdout,
+        stderr: result.stderr,
+      ),
+      null => Exited(
         result.exitCode,
         stdout: result.stdout,
         stderr: result.stderr,

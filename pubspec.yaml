@@ -2,7 +2,7 @@ name: is_program_driver
 description: >-
   intersyntactic's program driver: starts the programs the airlock has
   decided, as the suit a trajectory's agent wears, in that suit's home.
-version: 0.3.0
+version: 0.3.1
 repository: https://github.com/intersyntactic/program_driver
 publish_to: none
 
@@ -11,7 +11,7 @@ environment:
 
 dependencies:
   is_effects: ^0.14.4
-  is_executor: ^0.1.0
+  is_executor: ^0.2.0
   is_unix_socket_user_check: ^0.2.1
 
 dev_dependencies:
