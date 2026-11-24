@@ -64,8 +64,8 @@ final class ProgramDriver {
   final File _socket;
   final ServerSocket _server;
 
-  /// The process groups of the programs running now, by their leaders' pids.
-  final _running = <int>{};
+  /// The runs not yet finished, each able to kill its program's group.
+  final _running = <executor.Running>{};
 
   /// A program to run is its name, its arguments and its stdin, so far
   /// smaller than this.
@@ -131,13 +131,11 @@ final class ProgramDriver {
   }
 
   /// Stops listening and kills the process group of every program still
-  /// running, so none outlives the driver.
+  /// running, completing once each is gone, so none outlives the driver.
   Future<void> close() async {
     await _server.close();
     if (_socket.existsSync()) _socket.deleteSync();
-    for (final leader in _running.toList()) {
-      Process.killPid(-leader, ProcessSignal.sigkill);
-    }
+    await Future.wait([for (final run in _running.toList()) run.kill()]);
   }
 
   Future<void> _serve(Socket socket) async {
@@ -214,9 +212,9 @@ final class ProgramDriver {
   /// Reports what the program prints as it prints it, and returns only once
   /// all of it has been reported, so nothing is reported after the outcome.
   ///
-  /// Once it prints more than [maxOutputBytes] on either channel, it is
-  /// killed with its group and ends [Killed], keeping what it printed up to
-  /// that many bytes on each, cut where a character ends.
+  /// Once it prints more than [maxOutputBytes] on either channel, the
+  /// executor kills it with its group, and it ends [Killed], keeping what it
+  /// printed up to that many bytes on each, cut where a character ends.
   Future<Outcome<ExecResult>> _run(
     ProgramName program,
     Args args, {
@@ -226,96 +224,63 @@ final class ProgramDriver {
     if (path == null) {
       return Refused('no program named $program is installed here');
     }
-    int? leader;
-    // One executor per run, so its start hands over this run's group alone.
     final running =
         executor.Executor(
           root: root,
           consent: _decidedByTheAirlock,
           timeout: timeout,
-          onStarted: (pid, _) => _running.add(leader = pid),
-          onExited: _running.remove,
         ).start(
           [path, ...args.args],
           input: args.stdin,
           workingSubdir: args.inFolder.value,
           quiet: quiet,
+          maxOutputBytes: maxOutputBytes,
           taps: executor.ExecTaps.none,
         );
-    final out = BytesBuilder();
-    final err = BytesBuilder();
-    Channel? overflowed;
-    void take(Channel channel, String text) {
-      if (overflowed != null) return;
-      final bytes = utf8.encode(text);
-      final buffer = switch (channel) {
-        Channel.stdout => out,
-        Channel.stderr => err,
-      };
-      final room = maxOutputBytes - buffer.length;
-      final head = bytes.length <= room ? bytes : _wholeCharacters(bytes, room);
-      buffer.add(head);
-      if (head.isNotEmpty) {
-        report(
-          Printed(
-            channel,
-            head.length == bytes.length ? text : utf8.decode(head),
-          ),
-        );
-      }
-      if (head.length < bytes.length) {
-        overflowed = channel;
-        if (leader case final pid?) {
-          Process.killPid(-pid, ProcessSignal.sigkill);
-        }
-      }
-    }
-
+    _running.add(running);
+    unawaited(running.result.whenComplete(() => _running.remove(running)));
     final (start, _, _) = await (
       running.result,
-      running.stdout.forEach((t) => take(Channel.stdout, t)),
-      running.stderr.forEach((t) => take(Channel.stderr, t)),
+      running.stdout.forEach((t) => report(Printed(Channel.stdout, t))),
+      running.stderr.forEach((t) => report(Printed(Channel.stderr, t))),
     ).wait;
-    if (overflowed case final channel?) {
-      return Ran(
-        Killed(
-          'printed more than $maxOutputBytes bytes on ${channel.name}',
-          stdout: utf8.decode(out.takeBytes()),
-          stderr: utf8.decode(err.takeBytes()),
-        ),
-      );
-    }
     return _outcome(start);
   }
 
-  /// The longest start of [bytes], at most [room] long, that ends where a
-  /// UTF-8 character does.
-  static Uint8List _wholeCharacters(Uint8List bytes, int room) {
-    var end = room;
-    while (end > 0 && bytes[end] & 0xC0 == 0x80) {
-      end--;
-    }
-    return Uint8List.sublistView(bytes, 0, end);
-  }
-
   Outcome<ExecResult> _outcome(executor.ExecStart start) => switch (start) {
-    executor.ExecStarted(:final result) => Ran(switch (result) {
-      executor.ExecResult(:final silentFor?) => Killed(
-        'printed nothing for ${silentFor.inSeconds}s',
+    executor.ExecStarted(:final result) => Ran(switch (result.whyKilled) {
+      executor.KilledForSilence(:final quiet) => Killed(
+        'printed nothing for ${quiet.inSeconds}s',
         stdout: result.stdout,
         stderr: result.stderr,
       ),
-      executor.ExecResult(timedOut: true) => Killed(
+      executor.KilledForTimeout() => Killed(
         'timed out after ${timeout.inSeconds}s',
         stdout: result.stdout,
         stderr: result.stderr,
       ),
-      _ => Exited(
+      executor.KilledForOutput(:final channel, :final limit) => Killed(
+        'printed more than $limit bytes on ${_channel(channel).name}',
+        stdout: result.stdout,
+        stderr: result.stderr,
+      ),
+      // Only close() asks for a kill.
+      executor.KilledOnRequest() => Killed(
+        'killed as the program driver stopped',
+        stdout: result.stdout,
+        stderr: result.stderr,
+      ),
+      null => Exited(
         result.exitCode,
         stdout: result.stdout,
         stderr: result.stderr,
       ),
     }),
     executor.ExecNotStarted(:final why) => Refused(why),
+  };
+
+  static Channel _channel(executor.OutputChannel channel) => switch (channel) {
+    executor.OutputChannel.stdout => Channel.stdout,
+    executor.OutputChannel.stderr => Channel.stderr,
   };
 }

@@ -204,8 +204,28 @@ void main() {
     await started.future;
     final stopwatch = Stopwatch()..start();
     await driver.close();
-    await run.then((_) {}, onError: (Object _) {});
+    final out = await run;
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+    expect(
+      ((out as Ran<ExecResult>).output as Killed).why,
+      'killed as the program driver stopped',
+    );
+    expect(File('${root.path}/survived').existsSync(), isFalse);
+  });
+
+  test('kills a program started just before it closes', () async {
+    // Closed as the start goes out, the program may not yet lead its own
+    // group; whatever stage it reached, it must not run on.
+    final driver = await start();
+    final run = runProgram(
+      sh,
+      Args(['-c', 'sleep 1; touch survived']),
+      report: (_) {},
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await driver.close();
+    await run;
+    await Future<void>.delayed(const Duration(seconds: 2));
     expect(File('${root.path}/survived').existsSync(), isFalse);
   });
 
