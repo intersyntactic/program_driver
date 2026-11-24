@@ -8,12 +8,13 @@ import 'package:is_executor/is_executor.dart' as executor;
 import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 
 import 'installed_programs.dart';
-import 'request.dart';
+import 'system_program.dart';
 
 /// The program driver: a service on a Unix socket that starts programs under
 /// its root, the suit's home, for the airlock's user alone.
 ///
-/// A caller connects, sends one request as JSON and closes its side. For a
+/// A caller connects, sends one [ProgramRequest] as JSON (see
+/// [encodeProgramRequest]) and closes its side. For a
 /// program to run, the driver answers one line per [ProgramMessage] (see
 /// [encodeProgramMessage], with [encodeExecResult] for the outcome): a
 /// [Reported] for each piece the program prints, as it prints it, then one
@@ -89,7 +90,12 @@ final class ProgramDriver {
     SocketUserReader? socketUserReader,
   }) async {
     final server = await _bind(socket);
-    final chmod = await Process.run('chmod', ['0660', socket.path]);
+    final chmodProgram = SystemProgram.chmod.find();
+    if (chmodProgram == null) {
+      await server.close();
+      throw FileSystemException(SystemProgram.chmod.missing, socket.path);
+    }
+    final chmod = await Process.run(chmodProgram.path, ['0660', socket.path]);
     if (chmod.exitCode != 0) {
       await server.close();
       throw FileSystemException('chmod 0660: ${chmod.stderr}', socket.path);
@@ -136,9 +142,14 @@ final class ProgramDriver {
 
   Future<void> _serve(Socket socket) async {
     try {
-      if (!_socketUserCheck.allows(socket)) {
-        socket.destroy();
-        return;
+      final verdict = _socketUserCheck.decide(socket);
+      switch (verdict) {
+        case Allowed():
+          break;
+        case NotAllowed() || Unread():
+          stderr.writeln('refused a peer: $verdict');
+          socket.destroy();
+          return;
       }
       final request = BytesBuilder(copy: false);
       var tooLarge = false;
@@ -172,9 +183,9 @@ final class ProgramDriver {
     void Function(Object? json) send,
     void Function(ProgramMessage<ExecResult>) message,
   ) async {
-    final ProgramDriverRequest request;
+    final ProgramRequest request;
     try {
-      request = ProgramDriverRequest.fromJson(jsonDecode(utf8.decode(bytes)));
+      request = decodeProgramRequest(jsonDecode(utf8.decode(bytes)));
     } on FormatException catch (e) {
       // Infra's deploy proof matches this text on the box, so it changes
       // only together with that proof.
@@ -182,14 +193,14 @@ final class ProgramDriver {
       return;
     }
     switch (request) {
-      case RunProgram(:final program, :final args):
+      case RunProgramRequest(:final program, :final args):
         final outcome = await _run(
           program,
           args,
           report: (p) => message(Reported(p)),
         );
         message(Finished(outcome));
-      case ListInstalledPrograms():
+      case ListInstalledProgramsRequest():
         send(encodeProgramNames(_programs.names));
     }
   }

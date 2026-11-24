@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+- BREAKING: `ProgramDriverSocket`, `OutcomeUnknown` and
+  `InstalledProgramsUnknown` are gone; the airlock writes its own caller.
+  The request is is_effects' `ProgramRequest` (`RunProgramRequest`,
+  `ListInstalledProgramsRequest`, `encodeProgramRequest`,
+  `decodeProgramRequest`). The wire is unchanged.
+- Finds `stat`, `chmod` and `id` in `/usr/bin` or `/bin` only, never on the
+  PATH, so a `stat` placed earlier on the PATH can no longer vouch for a
+  programs folder; without one of them the service exits 78.
+- Says on stderr why it turned a peer away (`refused a peer: …`).
+- Requires is_effects `^0.14.4` and is_unix_socket_user_check `^0.2.1`.
+
 ## 0.2.2
 
 - The service exits 78, not 255, when the programs folder cannot be listed

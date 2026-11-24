@@ -4,4 +4,3 @@ library;
 
 export 'src/installed_programs.dart';
 export 'src/program_driver.dart';
-export 'src/program_driver_socket.dart';

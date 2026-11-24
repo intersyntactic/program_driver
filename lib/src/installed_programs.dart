@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:is_effects/is_effects.dart';
 
+import 'system_program.dart';
+
 /// Who owns a file and its permission bits, as `stat` reports them.
 typedef FileOwnership = ({int owner, int mode});
 
@@ -113,10 +115,13 @@ final class UnsafeProgramsFolder implements Exception {
   String toString() => 'programs folder: $why';
 }
 
-/// [path]'s owner and permission bits, from `stat`.
+/// [path]'s owner and permission bits, from the system's `stat`.
 FileOwnership _stat(String path) {
+  final stat =
+      SystemProgram.stat.find() ??
+      (throw FileSystemException(SystemProgram.stat.missing, path));
   final r = Process.runSync(
-    'stat',
+    stat.path,
     Platform.isMacOS ? ['-f', '%u %Lp', path] : ['-c', '%u %a', path],
   );
   final fields = r.exitCode == 0

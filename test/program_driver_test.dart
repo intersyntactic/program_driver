@@ -63,11 +63,48 @@ void main() {
     return const LineSplitter().convert(await utf8.decoder.bind(s).join());
   }
 
+  /// Asks the driver to run [program], passing on each progress to [report]
+  /// as it comes: the outcome, or null when the driver hangs up before it
+  /// sends one.
+  Future<Outcome<ExecResult>?> runProgram(
+    ProgramName program,
+    Args args, {
+    required Report report,
+  }) async {
+    final s = await Socket.connect(
+      InternetAddress(socket.path, type: InternetAddressType.unix),
+      0,
+    );
+    try {
+      s.add(
+        utf8.encode(
+          jsonEncode(encodeProgramRequest(RunProgramRequest(program, args))),
+        ),
+      );
+      await s.close();
+      await for (final line
+          in s
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        switch (decodeProgramMessage(jsonDecode(line), decodeExecResult)) {
+          case Reported(:final progress):
+            report(progress);
+          case Finished(:final outcome):
+            return outcome;
+        }
+      }
+    } on SocketException {
+      // A peer the driver turns away is hung up on.
+    }
+    return null;
+  }
+
   test('runs a program in its folder, reporting what it prints', () async {
     await start();
     await Directory('${root.path}/trees/a').create(recursive: true);
     final reported = <Progress>[];
-    final out = await ProgramDriverSocket(socket).runProgram(
+    final out = await runProgram(
       sh,
       Args(
         ['-c', r'basename "$PWD"; cat >&2; exit 3'],
@@ -101,7 +138,7 @@ void main() {
 
   test('refuses a folder outside its root, and starts nothing', () async {
     await start();
-    final out = await ProgramDriverSocket(socket).runProgram(
+    final out = await runProgram(
       sh,
       Args(['-c', 'touch ran'], inFolder: RelativePath('..')),
       report: (_) {},
@@ -112,8 +149,7 @@ void main() {
 
   test('kills a program that runs past its timeout', () async {
     await start(timeout: const Duration(seconds: 1));
-    final out = await ProgramDriverSocket(socket)
-        .runProgram(sh, Args(['-c', 'sleep 30']), report: (_) {});
+    final out = await runProgram(sh, Args(['-c', 'sleep 30']), report: (_) {});
     expect((out as Ran<ExecResult>).output, isA<Killed>());
   });
 
@@ -129,16 +165,12 @@ void main() {
 
   test('answers nobody but its caller, and starts nothing', () async {
     await start(caller: UserId.parse(me.number + 1));
-    // From the caller's side a hang-up after the start is sent is a run
-    // whose outcome never came back, which it cannot tell from a refusal.
-    await expectLater(
-      ProgramDriverSocket(socket).runProgram(
-        sh,
-        Args(['-c', 'touch ran']),
-        report: (_) => fail('reported to a refused caller'),
-      ),
-      throwsA(isA<OutcomeUnknown>()),
+    final out = await runProgram(
+      sh,
+      Args(['-c', 'touch ran']),
+      report: (_) => fail('reported to a refused caller'),
     );
+    expect(out, isNull);
     expect(File('${root.path}/ran').existsSync(), isFalse);
   });
 
@@ -150,21 +182,19 @@ void main() {
         readOption: (_, _) => Uint8List(0),
       ),
     );
-    await expectLater(
-      ProgramDriverSocket(socket).runProgram(
-        sh,
-        Args(['-c', 'touch ran']),
-        report: (_) => fail('reported to an unknown peer'),
-      ),
-      throwsA(isA<OutcomeUnknown>()),
+    final out = await runProgram(
+      sh,
+      Args(['-c', 'touch ran']),
+      report: (_) => fail('reported to an unknown peer'),
     );
+    expect(out, isNull);
     expect(File('${root.path}/ran').existsSync(), isFalse);
   });
 
   test('kills every program still running as it closes', () async {
     final driver = await start();
     final started = Completer<void>();
-    final run = ProgramDriverSocket(socket).runProgram(
+    final run = runProgram(
       sh,
       Args(['-c', 'echo started; sleep 30; touch survived']),
       report: (_) {
@@ -181,7 +211,7 @@ void main() {
 
   test('refuses a program not installed, though it is on the PATH', () async {
     await start();
-    final out = await ProgramDriverSocket(socket).runProgram(
+    final out = await runProgram(
       ProgramName.parse('cat')!,
       Args([]),
       report: (_) => fail('reported for a program never started'),
@@ -212,25 +242,21 @@ void main() {
 
   test('says which programs it runs', () async {
     await start();
-    expect(await ProgramDriverSocket(socket).installedPrograms(), {sh});
-  });
-
-  test('cannot say which programs it runs when none is listening', () async {
-    await expectLater(
-      ProgramDriverSocket(socket).installedPrograms(),
-      throwsA(isA<InstalledProgramsUnknown>()),
+    final lines = await raw(
+      jsonEncode(encodeProgramRequest(const ListInstalledProgramsRequest())),
     );
+    expect(decodeProgramNames(jsonDecode(lines.single)), {sh});
   });
 
   /// Runs `sh -c [script]`, returning its outcome and what it reported.
   Future<(Outcome<ExecResult>, List<Printed>)> runSh(String script) async {
     final reported = <Printed>[];
-    final out = await ProgramDriverSocket(socket).runProgram(
+    final out = await runProgram(
       sh,
       Args(['-c', script]),
       report: (p) => reported.add(p as Printed),
     );
-    return (out, reported);
+    return (out ?? fail('the driver hung up without an outcome'), reported);
   }
 
   String printed(List<Printed> reported, Channel channel) => [
@@ -277,12 +303,6 @@ void main() {
     expect(killed.why, 'printed more than 10 bytes on stderr');
     expect(killed.stderr, '0123456789');
     expect(printed(reported, Channel.stderr), '0123456789');
-  });
-
-  test('is refused when no driver is listening', () async {
-    final out = await ProgramDriverSocket(socket)
-        .runProgram(sh, Args(['-c', 'true']), report: (_) {});
-    expect(out, isA<Refused>());
   });
 
   test('its socket is readable and writable by owner and group only', () async {

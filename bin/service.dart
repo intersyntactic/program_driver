@@ -23,6 +23,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:is_program_driver/is_program_driver.dart';
+import 'package:is_program_driver/src/system_program.dart';
 import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 
 Future<void> main() async {
@@ -101,7 +102,8 @@ int? _uidOf(String? user) {
   if (user != null) {
     if (int.tryParse(user) case final uid?) return uid;
   }
-  final r = Process.runSync('id', ['-u', ?user]);
+  final id = SystemProgram.id.find() ?? _fail(SystemProgram.id.missing);
+  final r = Process.runSync(id.path, ['-u', ?user]);
   return r.exitCode == 0 ? int.tryParse(r.stdout.toString().trim()) : null;
 }
 
