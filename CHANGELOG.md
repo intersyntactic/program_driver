@@ -9,7 +9,10 @@
   ran on; `close()` now also waits until every run is gone.
 - A run killed by `close()` ends `Killed("killed as the program driver
   stopped")`.
-- Requires is_executor `^0.2.0`.
+- The output limit is is_executor's (`maxOutputBytes` on `start`, each
+  channel on its own): the driver no longer counts or cuts what a program
+  prints itself. What it keeps, reports and answers is unchanged.
+- Requires is_executor `^0.3.0`.
 
 ## 0.3.0
 

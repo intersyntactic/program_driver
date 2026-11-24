@@ -212,9 +212,9 @@ final class ProgramDriver {
   /// Reports what the program prints as it prints it, and returns only once
   /// all of it has been reported, so nothing is reported after the outcome.
   ///
-  /// Once it prints more than [maxOutputBytes] on either channel, it is
-  /// killed with its group and ends [Killed], keeping what it printed up to
-  /// that many bytes on each, cut where a character ends.
+  /// Once it prints more than [maxOutputBytes] on either channel, the
+  /// executor kills it with its group, and it ends [Killed], keeping what it
+  /// printed up to that many bytes on each, cut where a character ends.
   Future<Outcome<ExecResult>> _run(
     ProgramName program,
     Args args, {
@@ -234,62 +234,17 @@ final class ProgramDriver {
           input: args.stdin,
           workingSubdir: args.inFolder.value,
           quiet: quiet,
+          maxOutputBytes: maxOutputBytes,
           taps: executor.ExecTaps.none,
         );
     _running.add(running);
     unawaited(running.result.whenComplete(() => _running.remove(running)));
-    final out = BytesBuilder();
-    final err = BytesBuilder();
-    Channel? overflowed;
-    void take(Channel channel, String text) {
-      if (overflowed != null) return;
-      final bytes = utf8.encode(text);
-      final buffer = switch (channel) {
-        Channel.stdout => out,
-        Channel.stderr => err,
-      };
-      final room = maxOutputBytes - buffer.length;
-      final head = bytes.length <= room ? bytes : _wholeCharacters(bytes, room);
-      buffer.add(head);
-      if (head.isNotEmpty) {
-        report(
-          Printed(
-            channel,
-            head.length == bytes.length ? text : utf8.decode(head),
-          ),
-        );
-      }
-      if (head.length < bytes.length) {
-        overflowed = channel;
-        unawaited(running.kill());
-      }
-    }
-
     final (start, _, _) = await (
       running.result,
-      running.stdout.forEach((t) => take(Channel.stdout, t)),
-      running.stderr.forEach((t) => take(Channel.stderr, t)),
+      running.stdout.forEach((t) => report(Printed(Channel.stdout, t))),
+      running.stderr.forEach((t) => report(Printed(Channel.stderr, t))),
     ).wait;
-    if (overflowed case final channel?) {
-      return Ran(
-        Killed(
-          'printed more than $maxOutputBytes bytes on ${channel.name}',
-          stdout: utf8.decode(out.takeBytes()),
-          stderr: utf8.decode(err.takeBytes()),
-        ),
-      );
-    }
     return _outcome(start);
-  }
-
-  /// The longest start of [bytes], at most [room] long, that ends where a
-  /// UTF-8 character does.
-  static Uint8List _wholeCharacters(Uint8List bytes, int room) {
-    var end = room;
-    while (end > 0 && bytes[end] & 0xC0 == 0x80) {
-      end--;
-    }
-    return Uint8List.sublistView(bytes, 0, end);
   }
 
   Outcome<ExecResult> _outcome(executor.ExecStart start) => switch (start) {
@@ -304,7 +259,12 @@ final class ProgramDriver {
         stdout: result.stdout,
         stderr: result.stderr,
       ),
-      // The overflow kill returns before this, so only close() is left.
+      executor.KilledForOutput(:final channel, :final limit) => Killed(
+        'printed more than $limit bytes on ${_channel(channel).name}',
+        stdout: result.stdout,
+        stderr: result.stderr,
+      ),
+      // Only close() asks for a kill.
       executor.KilledOnRequest() => Killed(
         'killed as the program driver stopped',
         stdout: result.stdout,
@@ -317,5 +277,10 @@ final class ProgramDriver {
       ),
     }),
     executor.ExecNotStarted(:final why) => Refused(why),
+  };
+
+  static Channel _channel(executor.OutputChannel channel) => switch (channel) {
+    executor.OutputChannel.stdout => Channel.stdout,
+    executor.OutputChannel.stderr => Channel.stderr,
   };
 }
