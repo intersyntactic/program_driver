@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- The service exits 78, not 255, when the programs folder cannot be listed
+  or a path's owner cannot be read: `InstalledPrograms.read` throws
+  `UnsafeProgramsFolder` for both, so a restart policy that skips 78 leaves
+  them stopped.
+- Requires is_effects `^0.14.3`.
+
 ## 0.2.1
 
 - Kills a program's group by sending the signal itself
