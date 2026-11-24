@@ -143,7 +143,7 @@ void main() {
       Args(['-c', 'touch ran'], inFolder: RelativePath('..')),
       report: (_) {},
     );
-    expect(out, isA<Refused>());
+    expect(out, isA<NothingRan>());
     expect(File('${dir.path}/ran').existsSync(), isFalse);
   });
 
@@ -160,7 +160,7 @@ void main() {
       jsonDecode(lines.single),
       decodeExecResult,
     ) as Finished<ExecResult>;
-    expect((finished.outcome as Refused).why, startsWith('not a start'));
+    expect((finished.outcome as NothingRan).why, startsWith('not a start'));
   });
 
   test('answers nobody but its caller, and starts nothing', () async {
@@ -236,7 +236,7 @@ void main() {
       Args([]),
       report: (_) => fail('reported for a program never started'),
     );
-    expect((out as Refused).why, contains('installed'));
+    expect((out as NothingRan).why, contains('installed'));
   });
 
   test('refuses a name holding a slash sent on the wire', () async {
@@ -256,7 +256,7 @@ void main() {
       jsonDecode(lines.single),
       decodeExecResult,
     ) as Finished<ExecResult>;
-    expect((finished.outcome as Refused).why, startsWith('not a start'));
+    expect((finished.outcome as NothingRan).why, startsWith('not a start'));
     expect(File('${root.path}/ran').existsSync(), isFalse);
   });
 

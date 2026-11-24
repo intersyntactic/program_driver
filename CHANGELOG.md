@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- BREAKING: a program that never started (a request too large, not a
+  start, a program not installed, or one the executor could not start)
+  ends `NothingRan(why)`, not `Refused(why)`. On the wire the outcome's
+  kind is `"nothingRan"`; each `why` is unchanged. A reader on is_effects
+  0.14 cannot decode it, so the airlock must run is_effects 0.15 first.
+- Requires is_effects `^0.15.0`.
+
 ## 0.3.1
 
 - `close()` and the output limit kill a run through is_executor's

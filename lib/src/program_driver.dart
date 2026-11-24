@@ -163,7 +163,7 @@ final class ProgramDriver {
       void message(ProgramMessage<ExecResult> m) =>
           send(encodeProgramMessage(m, encodeExecResult));
       if (tooLarge) {
-        message(const Finished(Refused('request too large')));
+        message(const Finished(NothingRan('request too large')));
       } else {
         await _answer(request.takeBytes(), send, message);
       }
@@ -187,7 +187,7 @@ final class ProgramDriver {
     } on FormatException catch (e) {
       // Infra's deploy proof matches this text on the box, so it changes
       // only together with that proof.
-      message(Finished(Refused('not a start: ${e.message}')));
+      message(Finished(NothingRan('not a start: ${e.message}')));
       return;
     }
     switch (request) {
@@ -222,7 +222,7 @@ final class ProgramDriver {
   }) async {
     final path = _programs.pathOf(program);
     if (path == null) {
-      return Refused('no program named $program is installed here');
+      return NothingRan('no program named $program is installed here');
     }
     final running =
         executor.Executor(
@@ -276,7 +276,7 @@ final class ProgramDriver {
         stderr: result.stderr,
       ),
     }),
-    executor.ExecNotStarted(:final why) => Refused(why),
+    executor.ExecNotStarted(:final why) => NothingRan(why),
   };
 
   static Channel _channel(executor.OutputChannel channel) => switch (channel) {
