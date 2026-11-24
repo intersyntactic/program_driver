@@ -17,7 +17,8 @@ kernel reports it, never from the request.
 ## The wire
 
 One connection per request, one JSON value per line, with the codecs from
-is_effects. The caller sends one request and closes its side:
+is_effects. The caller sends one `ProgramRequest` (`encodeProgramRequest`)
+and closes its side:
 
 - `{"kind": "run", "programToRun": encodeProgramToRun(program, args)}`: the
   service answers a `Reported` for each piece the program prints, as it
@@ -27,8 +28,11 @@ is_effects. The caller sends one request and closes its side:
   programs it runs as a sorted list, and closes.
 
 Anything else is answered with a `Finished` whose outcome is
-`Refused("not a start: …")`. `ProgramDriverSocket` is that caller, for the
-airlock.
+`Refused("not a start: …")`. A peer that is not the caller is hung up on
+unanswered, and the service says why on stderr (`refused a peer: …`).
+
+The caller is the airlock's own, written against is_effects' types; this
+package ships only the service.
 
 ## The programs it runs
 
@@ -43,6 +47,10 @@ It will not start if its own user could change what runs: if that user
 owns, or anyone besides the owner may write, the folder, an entry's
 program, or any folder above either. A suit's home is the suit's, so no
 entry may lead there.
+
+The helpers it runs for itself, `stat` to read who owns each of those
+paths, `id` to look up the caller and `chmod` for its socket, are found
+only in `/usr/bin` or `/bin`, never on the PATH; without one it exits 78.
 
 A program may print at most `PROGRAM_DRIVER_MAX_OUTPUT_BYTES` on stdout, and
 as much on stderr. The first time it prints past that, its group is killed
