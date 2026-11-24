@@ -85,6 +85,25 @@ void main() {
     );
   });
 
+  test('refuses a folder it cannot list', () async {
+    await Process.run('chmod', ['000', programs.path]);
+    addTearDown(() => Process.run('chmod', ['755', programs.path]));
+    expect(read, unsafe('cannot list'));
+  });
+
+  test("refuses a path whose owner it cannot read", () {
+    expect(
+      () => InstalledPrograms.read(
+        programs,
+        driverUser: me,
+        stat: (path) => path == dir.path
+            ? throw FileSystemException('stat: no such user', path)
+            : (owner: 0, mode: executable),
+      ),
+      unsafe('cannot read who owns ${dir.path}'),
+    );
+  });
+
   test('refuses an entry that leads nowhere', () async {
     await Link('${programs.path}/gone').create('${dir.path}/gone');
     expect(read, unsafe('leads nowhere'));

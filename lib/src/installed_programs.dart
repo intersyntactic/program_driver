@@ -31,15 +31,24 @@ final class InstalledPrograms {
   /// when it owns, or the folder's group or everyone may write, the folder,
   /// any entry's program, or any folder above either. It also throws for an
   /// entry that is not an executable file once its symlinks are followed,
-  /// or whose name is not a program's name.
+  /// or whose name is not a program's name, and when the folder cannot be
+  /// listed or a path's owner cannot be read.
   static InstalledPrograms read(
     Directory folder, {
     required int driverUser,
     FileOwnership Function(String path) stat = _stat,
   }) {
+    FileOwnership ownership(String path) {
+      try {
+        return stat(path);
+      } on FileSystemException catch (e) {
+        throw UnsafeProgramsFolder('cannot read who owns $path: ${e.message}');
+      }
+    }
+
     void unchangeable(String path) {
       for (var p = path; ; p = File(p).parent.path) {
-        final (:owner, :mode) = stat(p);
+        final (:owner, :mode) = ownership(p);
         if (owner == driverUser) {
           throw UnsafeProgramsFolder('$p is owned by the driver\'s user');
         }
@@ -57,8 +66,16 @@ final class InstalledPrograms {
       throw UnsafeProgramsFolder('no folder ${folder.path}');
     }
     unchangeable(resolvedFolder);
+    final List<FileSystemEntity> listed;
+    try {
+      listed = Directory(resolvedFolder).listSync();
+    } on FileSystemException catch (e) {
+      throw UnsafeProgramsFolder(
+        'cannot list $resolvedFolder: ${e.osError?.message ?? e.message}',
+      );
+    }
     final entries = <ProgramName, String>{};
-    for (final entry in Directory(resolvedFolder).listSync()) {
+    for (final entry in listed) {
       final name = entry.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
       final program =
           ProgramName.parse(name) ??
@@ -72,7 +89,7 @@ final class InstalledPrograms {
       if (FileSystemEntity.typeSync(target) != FileSystemEntityType.file) {
         throw UnsafeProgramsFolder('${entry.path} is not a file');
       }
-      if (stat(target).mode & _anyExecute == 0) {
+      if (ownership(target).mode & _anyExecute == 0) {
         throw UnsafeProgramsFolder('${entry.path} is not executable');
       }
       unchangeable(target);
