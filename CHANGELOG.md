@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Requires is_effects `^0.17.0`. Its wire is the same as 0.15's, so a
+  0.4.0 and a 0.4.1 driver answer byte for byte alike, and either can run
+  beside an airlock on 0.15 or 0.17.
+
 ## 0.4.0
 
 - BREAKING: a program that never started (a request too large, not a
