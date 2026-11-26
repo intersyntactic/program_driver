@@ -28,7 +28,7 @@ and closes its side:
   programs it runs as a sorted list, and closes.
 
 Anything else is answered with a `Finished` whose outcome is
-`Refused("not a start: …")`. A peer that is not the caller is hung up on
+`NothingRan("not a start: …")`. A peer that is not the caller is hung up on
 unanswered, and the service says why on stderr (`refused a peer: …`).
 
 The caller is the airlock's own, written against is_effects' types; this
@@ -56,7 +56,7 @@ A program may print at most `PROGRAM_DRIVER_MAX_OUTPUT_BYTES` on stdout, and
 as much on stderr. The first time it prints past that, its group is killed
 and it ends `Killed("printed more than N bytes on stdout")`, keeping what it
 printed up to N bytes, cut where a character ends; nothing past that is
-reported or recorded. It is `Killed`, not `Refused`, because the program
+reported or recorded. It is `Killed`, not `NothingRan`, because the program
 ran and may already have done something.
 
 The list says what the airlock may ask for; it confines nothing. The suit
