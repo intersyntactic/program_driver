@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Published to pub.dev. The code is 0.4.1's.
+
 ## 0.4.1
 
 - Requires is_effects `^0.17.0`. Its wire is the same as 0.15's, so a
