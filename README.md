@@ -1,6 +1,6 @@
 # is_program_driver
 
-intersyntactic's `RunsPrograms` (from [is_effects](https://github.com/intersyntactic/effects)):
+intersyntactic's `RunsPrograms` (from [is_program_request_vocabulary](https://pub.dev/packages/is_program_request_vocabulary)):
 it starts the programs the airlock has decided, such as `git` or `dart`, and
 reports what each prints while it runs, then how it ended.
 
@@ -17,13 +17,13 @@ kernel reports it, never from the request.
 ## The wire
 
 One connection per request, one JSON value per line, with the codecs from
-is_effects. The caller sends one `ProgramRequest` (`encodeProgramRequest`)
+is_program_request_vocabulary and is_outcome_vocabulary. The caller sends one `ProgramRequest` (`encodeProgramRequest`)
 and closes its side:
 
 - `{"kind": "run", "programToRun": encodeProgramToRun(program, args)}`: the
   service answers a `Reported` for each piece the program prints, as it
   prints it, then one `Finished` with the outcome (`encodeProgramMessage`
-  with `encodeExecResult`), and closes;
+  with `encodePrinted` and `encodeExecResult`), and closes;
 - `{"kind": "list"}`: the service answers one line, the names of the
   programs it runs as a sorted list, and closes.
 
@@ -31,7 +31,7 @@ Anything else is answered with a `Finished` whose outcome is
 `NothingRan("not a start: …")`. A peer that is not the caller is hung up on
 unanswered, and the service says why on stderr (`refused a peer: …`).
 
-The caller is the airlock's own, written against is_effects' types; this
+The caller is the airlock's own, written against the same vocabularies; this
 package ships only the service.
 
 ## The programs it runs

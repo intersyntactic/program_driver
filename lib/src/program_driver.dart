@@ -3,8 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:is_effects/is_effects.dart';
 import 'package:is_executor/is_executor.dart' as executor;
+import 'package:is_outcome_vocabulary/is_outcome_vocabulary.dart';
+import 'package:is_program_request_vocabulary/is_program_request_vocabulary.dart';
 import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 
 import 'installed_programs.dart';
@@ -16,7 +17,8 @@ import 'system_program.dart';
 /// A caller connects, sends one [ProgramRequest] as JSON (see
 /// [encodeProgramRequest]) and closes its side. For a
 /// program to run, the driver answers one line per [ProgramMessage] (see
-/// [encodeProgramMessage], with [encodeExecResult] for the outcome): a
+/// [encodeProgramMessage], with [encodePrinted] for each report and
+/// [encodeExecResult] for the outcome): a
 /// [Reported] for each piece the program prints, as it prints it, then one
 /// [Finished]. Asked which programs are installed, it answers one line,
 /// their names. Then it closes. Who is calling is read from the socket as
@@ -160,8 +162,8 @@ final class ProgramDriver {
       }
       void send(Object? json) =>
           socket.add(utf8.encode('${jsonEncode(json)}\n'));
-      void message(ProgramMessage<ExecResult> m) =>
-          send(encodeProgramMessage(m, encodeExecResult));
+      void message(ProgramMessage<Printed, ExecResult> m) =>
+          send(encodeProgramMessage(m, encodePrinted, encodeExecResult));
       if (tooLarge) {
         message(const Finished(NothingRan('request too large')));
       } else {
@@ -179,7 +181,7 @@ final class ProgramDriver {
   Future<void> _answer(
     Uint8List bytes,
     void Function(Object? json) send,
-    void Function(ProgramMessage<ExecResult>) message,
+    void Function(ProgramMessage<Printed, ExecResult>) message,
   ) async {
     final ProgramRequest request;
     try {
@@ -218,7 +220,7 @@ final class ProgramDriver {
   Future<Outcome<ExecResult>> _run(
     ProgramName program,
     Args args, {
-    required Report report,
+    required void Function(Printed printed) report,
   }) async {
     final path = _programs.pathOf(program);
     if (path == null) {

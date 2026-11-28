@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:is_effects/is_effects.dart';
+import 'package:is_outcome_vocabulary/is_outcome_vocabulary.dart';
 import 'package:is_program_driver/is_program_driver.dart';
+import 'package:is_program_request_vocabulary/is_program_request_vocabulary.dart';
+import 'package:is_relative_path_vocabulary/is_relative_path_vocabulary.dart';
 import 'package:is_unix_socket_user_check/is_unix_socket_user_check.dart';
 import 'package:test/test.dart';
 
@@ -63,13 +65,13 @@ void main() {
     return const LineSplitter().convert(await utf8.decoder.bind(s).join());
   }
 
-  /// Asks the driver to run [program], passing on each progress to [report]
+  /// Asks the driver to run [program], passing on each [Printed] to [report]
   /// as it comes: the outcome, or null when the driver hangs up before it
   /// sends one.
   Future<Outcome<ExecResult>?> runProgram(
     ProgramName program,
     Args args, {
-    required Report report,
+    required void Function(Printed printed) report,
   }) async {
     final s = await Socket.connect(
       InternetAddress(socket.path, type: InternetAddressType.unix),
@@ -87,7 +89,11 @@ void main() {
               .cast<List<int>>()
               .transform(utf8.decoder)
               .transform(const LineSplitter())) {
-        switch (decodeProgramMessage(jsonDecode(line), decodeExecResult)) {
+        switch (decodeProgramMessage(
+          jsonDecode(line),
+          decodePrinted,
+          decodeExecResult,
+        )) {
           case Reported(:final progress):
             report(progress);
           case Finished(:final outcome):
@@ -103,7 +109,7 @@ void main() {
   test('runs a program in its folder, reporting what it prints', () async {
     await start();
     await Directory('${root.path}/trees/a').create(recursive: true);
-    final reported = <Progress>[];
+    final reported = <Printed>[];
     final out = await runProgram(
       sh,
       Args(
@@ -118,7 +124,7 @@ void main() {
     expect(exited.stdout, 'a\n');
     expect(exited.stderr, 'in');
     expect([
-      for (final p in reported.cast<Printed>()) (p.channel, p.text),
+      for (final p in reported) (p.channel, p.text),
     ], unorderedEquals([(Channel.stdout, 'a\n'), (Channel.stderr, 'in')]));
   });
 
@@ -158,8 +164,9 @@ void main() {
     final lines = await raw('{"program":"sh -c \'touch ran\'"}');
     final finished = decodeProgramMessage(
       jsonDecode(lines.single),
+      decodePrinted,
       decodeExecResult,
-    ) as Finished<ExecResult>;
+    ) as Finished<Printed, ExecResult>;
     expect((finished.outcome as NothingRan).why, startsWith('not a start'));
   });
 
@@ -254,8 +261,9 @@ void main() {
     );
     final finished = decodeProgramMessage(
       jsonDecode(lines.single),
+      decodePrinted,
       decodeExecResult,
-    ) as Finished<ExecResult>;
+    ) as Finished<Printed, ExecResult>;
     expect((finished.outcome as NothingRan).why, startsWith('not a start'));
     expect(File('${root.path}/ran').existsSync(), isFalse);
   });
@@ -274,7 +282,7 @@ void main() {
     final out = await runProgram(
       sh,
       Args(['-c', script]),
-      report: (p) => reported.add(p as Printed),
+      report: reported.add,
     );
     return (out ?? fail('the driver hung up without an outcome'), reported);
   }
