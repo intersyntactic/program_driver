@@ -4,6 +4,7 @@ description: >-
   decided, as the suit a trajectory's agent wears, in that suit's home.
 version: 0.5.0
 repository: https://github.com/intersyntactic/program_driver
+publish_to: none
 
 environment:
   sdk: ^3.13.0
