@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:is_effects/is_effects.dart';
+import 'package:is_program_request_vocabulary/is_program_request_vocabulary.dart';
 
 import 'system_program.dart';
 

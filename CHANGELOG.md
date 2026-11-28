@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- BREAKING for Dart callers: depends on is_program_request_vocabulary
+  `^0.1.0` and is_outcome_vocabulary `^0.1.0` in place of is_effects, so
+  `ProgramName` and the other types it takes and returns come from those
+  packages. A report is a `Printed` and a message is
+  `ProgramMessage<Printed, ExecResult>`.
+- The wire is unchanged: every key and `kind` is the same, so a 0.5.0
+  driver can run beside an airlock still on is_effects.
+
 ## 0.4.2
 
 - Published to pub.dev. The code is 0.4.1's.
